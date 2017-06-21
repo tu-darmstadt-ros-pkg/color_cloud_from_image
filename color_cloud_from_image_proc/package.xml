@@ -21,6 +21,14 @@
   <depend>sensor_msgs</depend>
   <depend>tf</depend>
   <depend>tf_conversions</depend>
+  <depend>aslam_cameras</depend>
+  <depend>aslam_time</depend>
+  <depend>sm_boost</depend>
+  <depend>sm_property_tree</depend>
+  <depend>sm_eigen</depend>
+  <depend>sm_kinematics</depend>
+  <depend>sm_opencv</depend>
+  <depend>sm_logging</depend>
 
   <export>
     <nodelet plugin="${prefix}/nodelet_plugins.xml" />

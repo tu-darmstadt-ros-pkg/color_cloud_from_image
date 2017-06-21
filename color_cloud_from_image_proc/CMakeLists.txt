@@ -16,7 +16,17 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   tf
   tf_conversions
+  aslam_cameras
+  aslam_time
+  sm_boost
+  sm_property_tree
+  sm_eigen
+  sm_kinematics
+  sm_opencv
+  sm_logging
 )
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++0x")
 
 catkin_package(
   INCLUDE_DIRS include
