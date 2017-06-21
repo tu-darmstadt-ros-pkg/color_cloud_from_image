@@ -1,0 +1,7 @@
+<library path="lib/libcolor_cloud_from_image_proc">
+  <class name="color_cloud_from_image/ColorCloudFromImageNodelet" type="color_cloud::ColorCloudFromImageNodelet" base_class_type="nodelet::Nodelet">
+    <description>
+      Color cloud from image nodelet
+    </description>
+  </class>
+</library>
