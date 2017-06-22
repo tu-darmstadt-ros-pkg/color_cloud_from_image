@@ -1,24 +1,21 @@
 #include <nodelet/nodelet.h>
 #include <pluginlib/class_list_macros.h>
 
-//#include "image_undistort/image_undistort.h"
+#include <color_cloud_from_image_proc/color_cloud_from_image.h>
 
-namespace color_cloud {
+namespace color_cloud_from_image {
 
 class ColorCloudFromImageNodelet : public nodelet::Nodelet {
   virtual void onInit() {
-    try {
-      //image_undistort_ = std::make_shared<ImageUndistort>(
-      //    getNodeHandle(), getPrivateNodeHandle());
-    } catch (std::runtime_error e) {
-      ROS_ERROR("%s", e.what());
-    }
+    color_cloud_.reset(new ColorCloudFromImage());
+    ros::NodeHandle nh("~");
+    color_cloud_->loadCamerasFromNamespace(nh);
   }
 
-  //std::shared_ptr<ImageUndistort> image_undistort_;
+  boost::shared_ptr<ColorCloudFromImage> color_cloud_;
 };
 }
 
-PLUGINLIB_DECLARE_CLASS(color_cloud, ColorCloudFromImageNodelet,
-                        color_cloud::ColorCloudFromImageNodelet,
+PLUGINLIB_DECLARE_CLASS(color_cloud_from_image, ColorCloudFromImageNodelet,
+                        color_cloud_from_image::ColorCloudFromImageNodelet,
                         nodelet::Nodelet);

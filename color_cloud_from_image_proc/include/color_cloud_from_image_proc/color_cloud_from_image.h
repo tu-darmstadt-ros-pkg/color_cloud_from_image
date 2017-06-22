@@ -10,20 +10,24 @@
 
 #include <functional>
 
-//#include <aslam/cameras/CameraGeometry.hpp>
-//#include <aslam/cameras/RadialTangentialDistortion.hpp>
-//#include <aslam/cameras/OmniProjection.hpp>
-
 #include <aslam/cameras.hpp>
 
 #include <tf2_ros/transform_listener.h>
+
+// pcl
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+
+#include <pcl_conversions/pcl_conversions.h>
+
+#include <pcl_ros/transforms.h>
 
 
 namespace color_cloud_from_image {
 
   struct Color {
     Color() : r(0), g(0), b(0) {}
-    Color(double _r, double _g, double _b)
+    Color(uint8_t _r, uint8_t _g, uint8_t _b)
       : r(_r), g(_g), b(_b) {}
 
     double r, g, b;
@@ -68,13 +72,14 @@ namespace color_cloud_from_image {
      */
     void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr);
 
-    Color worldToColor(const Eigen::Vector3d& point3d);
+    bool worldToColor(const Eigen::Vector3d& point3d, const Camera &cam, Color &color);
 
     ros::NodeHandle nh_;
     sensor_msgs::PointCloud2 last_cloud_;
     std::map<std::string, Camera> cameras_;
 
     boost::shared_ptr<image_transport::ImageTransport> it_;
+    boost::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     boost::shared_ptr<tf2_ros::TransformListener> tf_listener_;
     ros::Subscriber cloud_sub_;
     ros::Publisher cloud_pub_;
