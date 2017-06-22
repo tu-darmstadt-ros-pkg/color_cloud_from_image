@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<launch>
+  <node pkg="color_cloud_from_image_proc" type="color_cloud_from_image_proc_node" name="color_cloud_from_image_node" output="screen">
+<!--     <param name="velocity_factor" value="1" /> -->
+    <rosparam file="$(find color_cloud_from_image_proc)/config/cameras.yaml" command="load" />
+
+    <remap from="cloud" to="/move_group/filtered_cloud" />
+<!--     <remap from="colored_cloud" to="" /> -->
+  </node>
+</launch>
