@@ -16,19 +16,35 @@
 
 #include <aslam/cameras.hpp>
 
+#include <tf2_ros/transform_listener.h>
+
 
 namespace color_cloud_from_image {
 
-  struct IntrinsicCalibration {
-    double xi, fu, fv, cu, cv, ru, rv;
-    double k1, k2, p1, p2;
+  struct Color {
+    Color() : r(0), g(0), b(0) {}
+    Color(double _r, double _g, double _b)
+      : r(_r), g(_g), b(_b) {}
+
+    double r, g, b;
   };
 
-  struct CameraModel{
+  struct IntrinsicCalibration {
+//    double xi, fu, fv, cu, cv, ru, rv;
+//    double k1, k2, p1, p2;
+    std::string camera_model;
+    std::vector<double> intrinsics;
+    std::string distortion_model;
+    std::vector<double> distortion;
+    std::pair<int, int> resolution;
+  };
+
+  struct Camera {
     std::string name;
     IntrinsicCalibration calibration;
     sensor_msgs::ImageConstPtr last_image;
-    boost::shared_ptr<aslam::cameras::CameraGeometryBase> camera;
+    boost::shared_ptr<aslam::cameras::CameraGeometryBase> camera_model;
+    image_transport::Subscriber sub;
   };
 
 
@@ -37,9 +53,9 @@ namespace color_cloud_from_image {
     ColorCloudFromImage();
     // add camera with name and calibration
     // create aslam cam instance for projection
+    void loadCamerasFromNamespace(ros::NodeHandle &nh);
     void addCamera(std::string name, std::string topic, const IntrinsicCalibration& calibration);
-    void addCamera(std::string name, std::string topic, const ros::NodeHandle& nh);
-    IntrinsicCalibration loadCalibration(const ros::NodeHandle& nh);
+    IntrinsicCalibration loadCalibration(ros::NodeHandle &nh);
   private:
     // save images for respective cam
     void imageCallback(std::string cam_name, const sensor_msgs::ImageConstPtr& image_ptr);
@@ -52,14 +68,15 @@ namespace color_cloud_from_image {
      */
     void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr);
 
-    void worldToColor(const Eigen::Vector3d& point3d);
+    Color worldToColor(const Eigen::Vector3d& point3d);
 
     ros::NodeHandle nh_;
     sensor_msgs::PointCloud2 last_cloud_;
-    std::map<std::string, CameraModel> cameras_;
+    std::map<std::string, Camera> cameras_;
 
+    boost::shared_ptr<image_transport::ImageTransport> it_;
+    boost::shared_ptr<tf2_ros::TransformListener> tf_listener_;
     ros::Subscriber cloud_sub_;
-    std::map<std::string, image_transport::Subscriber> cam_subs_;
     ros::Publisher cloud_pub_;
   };
 }
