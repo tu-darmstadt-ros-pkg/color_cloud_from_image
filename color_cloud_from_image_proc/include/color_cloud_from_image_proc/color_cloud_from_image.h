@@ -41,8 +41,8 @@ namespace color_cloud_from_image {
     std::string camera_model;
     std::vector<double> intrinsics;
     std::string distortion_model;
-    std::vector<double> distortion;
-    std::pair<int, int> resolution;
+    std::vector<double> distortion_params;
+    std::vector<int> resolution;
   };
 
   struct Camera {
@@ -51,6 +51,7 @@ namespace color_cloud_from_image {
     sensor_msgs::ImageConstPtr last_image;
     boost::shared_ptr<aslam::cameras::CameraGeometryBase> camera_model;
     image_transport::Subscriber sub;
+    std::string frame_id; //overrides header.frame_id if set
   };
 
 
@@ -60,7 +61,7 @@ namespace color_cloud_from_image {
     // add camera with name and calibration
     // create aslam cam instance for projection
     void loadCamerasFromNamespace(ros::NodeHandle &nh);
-    void addCamera(std::string name, std::string topic, const IntrinsicCalibration& calibration);
+    void addCamera(std::string name, std::string topic, std::string frame_id, const IntrinsicCalibration& calibration);
     IntrinsicCalibration loadCalibration(ros::NodeHandle &nh);
   private:
     // save images for respective cam
@@ -76,6 +77,22 @@ namespace color_cloud_from_image {
 
     bool worldToColor(const Eigen::Vector3d& point3d, const Camera &cam, Color &color);
 
+    std::string intrinsicsToString(const IntrinsicCalibration& calibration);
+
+    template<typename T>
+    std::string vecToString(const std::vector<T>& vec) {
+      std::stringstream ss;
+      ss << "[";
+      for (unsigned int i = 0; i < vec.size(); ++i) {
+        ss << vec[i];
+        if (i != vec.size() -1) {
+          ss << ", ";
+        }
+      }
+      ss << "]";
+      return ss.str();
+    }
+
     ros::NodeHandle nh_;
     sensor_msgs::PointCloud2 last_cloud_;
     std::map<std::string, Camera> cameras_;
@@ -85,6 +102,8 @@ namespace color_cloud_from_image {
     boost::shared_ptr<tf2_ros::TransformListener> tf_listener_;
     ros::Subscriber cloud_sub_;
     ros::Publisher cloud_pub_;
+    ros::Publisher cloud_debug_pub_;
+
   };
 }
 
