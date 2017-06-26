@@ -65,47 +65,110 @@ void ColorCloudFromImage::addCamera(std::string name, std::string topic, const I
   cameras_.emplace(entry);
 }
 
+//void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr) {
+//  pcl::PointCloud<pcl::PointXYZ> cloud;
+//  pcl::fromROSMsg(*cloud_ptr, cloud);
+
+//  pcl::PointCloud<pcl::PointXYZRGB> cloud_out;
+//  for (unsigned int i = 0; i < cloud.size(); i++) {
+//    const pcl::PointXYZ& point = cloud[i];
+//    geometry_msgs::Vector3Stamped vec;
+//    vec.vector.x = point.x;
+//    vec.vector.y = point.y;
+//    vec.vector.z = point.z;
+//    vec.header.frame_id = cloud_ptr->header.frame_id;
+//    vec.header.stamp = cloud_ptr->header.stamp;
+
+//    bool found_color = false;
+//    Color color;
+//    for (std::map<std::string, Camera>::iterator c = cameras_.begin(); c != cameras_.end() && !found_color; ++c) {
+//      const Camera& cam = c->second;
+//      if (cam.last_image) {
+//        geometry_msgs::Vector3Stamped vec_cam;
+//        std::string cam_frame_id;
+//        if (cam.name == "cam0") {
+//          cam_frame_id = "ricoh_theta_left_optical_frame";
+//        }
+//        if (cam.name == "cam1") {
+//          cam_frame_id = "ricoh_theta_right_optical_frame";
+//        }
+//        try {
+////          transform = tf_buffer_->lookupTransform(cloud_ptr->header.frame_id, cam.last_image->header.frame_id, cloud_ptr->header.stamp, ros::Duration(1));
+//          vec_cam = tf_buffer_->transform<geometry_msgs::Vector3Stamped>(vec, cam_frame_id, ros::Duration(1));
+
+//        } catch (tf2::TransformException e) {
+//          ROS_WARN_STREAM("LookupTransform failed. Reason: " << e.what());
+//          continue;
+//        }
+
+//        Eigen::Vector3d point_cam(vec_cam.vector.x, vec_cam.vector.y, vec_cam.vector.z);
+//        found_color = worldToColor(point_cam, cam, color);
+//      }
+//    }
+//    pcl::PointXYZRGB colored_point;
+//    colored_point.x = point.x;
+//    colored_point.y = point.y;
+//    colored_point.z = point.z;
+//    colored_point.r = color.r;
+//    colored_point.g = color.g;
+//    colored_point.b = color.b;
+//    cloud_out.push_back(colored_point);
+//  }
+
+//  sensor_msgs::PointCloud2 cloud_out_msg;
+//  pcl::toROSMsg(cloud_out, cloud_out_msg);
+//  cloud_pub_.publish(cloud_out_msg);
+//}
+
 void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr) {
-  pcl::PointCloud<pcl::PointXYZ> cloud;
-  pcl::fromROSMsg(*cloud_ptr, cloud);
-
   pcl::PointCloud<pcl::PointXYZRGB> cloud_out;
-  for (unsigned int i = 0; i < cloud.size(); i++) {
-    const pcl::PointXYZ& point = cloud[i];
-    geometry_msgs::Vector3Stamped vec;
-    vec.vector.x = point.x;
-    vec.vector.y = point.y;
-    vec.vector.z = point.z;
-    vec.header.frame_id = cloud_ptr->header.frame_id;
-    vec.header.stamp = cloud_ptr->header.stamp;
+  pcl::fromROSMsg(*cloud_ptr, cloud_out);
 
-    bool found_color = false;
-    Color color;
-    for (std::map<std::string, Camera>::iterator c = cameras_.begin(); c != cameras_.end() && !found_color; ++c) {
-      const Camera& cam = c->second;
-      if (cam.last_image) {
-        geometry_msgs::Vector3Stamped vec_cam;
-        try {
-//          transform = tf_buffer_->lookupTransform(cloud_ptr->header.frame_id, cam.last_image->header.frame_id, cloud_ptr->header.stamp, ros::Duration(1));
-          vec_cam = tf_buffer_->transform(vec, cam.last_image->header.frame_id, ros::Duration(1));
+  std::vector<bool> has_color(cloud_ptr->height * cloud_ptr->width, false);
+  for (std::map<std::string, Camera>::iterator c = cameras_.begin(); c != cameras_.end(); ++c) {
+    const Camera& cam = c->second;
+    if (cam.last_image) {
+      // get transform to camera frame
+      geometry_msgs::TransformStamped transform;
+      std::string cam_frame_id;
+      if (cam.name == "cam0") {
+        cam_frame_id = "ricoh_theta_left_optical_frame";
+      }
+      if (cam.name == "cam1") {
+        cam_frame_id = "ricoh_theta_right_optical_frame";
+      }
+      try {
+        transform = tf_buffer_->lookupTransform(cloud_ptr->header.frame_id, cam_frame_id /*cam.last_image->header.frame_id*/, cloud_ptr->header.stamp, ros::Duration(1));
+      } catch (tf2::TransformException e) {
+        ROS_WARN_STREAM("LookupTransform failed. Reason: " << e.what());
+        continue;
+      }
+      // transform cloud to cam frame
+      sensor_msgs::PointCloud2 cloud_cam_frame;
+      tf2::doTransform(*cloud_ptr, cloud_cam_frame, transform); // TODO transform points individually after checking if they already have a color
+      // transform to pcl
+      pcl::PointCloud<pcl::PointXYZ> cloud;
+      pcl::fromROSMsg(cloud_cam_frame, cloud);
 
-        } catch (tf2::TransformException e) {
-          ROS_WARN_STREAM("LookupTransform failed. Reason: " << e.what());
+      // iterate over each point in cloud
+      for (unsigned int i = 0; i < cloud.size(); i++) {
+        const pcl::PointXYZ& point = cloud[i];
+        // skip if point already has a color
+        if (has_color[i]) {
           continue;
         }
 
-        Eigen::Vector3d point_cam(vec_cam.vector.x, vec_cam.vector.y, vec_cam.vector.z);
-        found_color = worldToColor(point_cam, cam, color);
+        Eigen::Vector3d point_cam(point.x, point.y, point.z);
+        Color color;
+        has_color[i] = worldToColor(point_cam, cam, color);
+        if (has_color[i]) {
+          ROS_INFO_STREAM("Found color! (" << color.r << ", " << color.g << ", " << color.b << ")");
+          cloud_out[i].r = color.r;
+          cloud_out[i].g = color.g;
+          cloud_out[i].b = color.b;
+        }
       }
     }
-    pcl::PointXYZRGB colored_point;
-    colored_point.x = point.x;
-    colored_point.y = point.y;
-    colored_point.z = point.z;
-    colored_point.r = color.r;
-    colored_point.g = color.g;
-    colored_point.b = color.b;
-    cloud_out.push_back(colored_point);
   }
 
   sensor_msgs::PointCloud2 cloud_out_msg;
@@ -146,7 +209,7 @@ bool ColorCloudFromImage::worldToColor(const Eigen::Vector3d& point3d, const Cam
     color.b = img.at<uint8_t>(pixel_i(0), pixel_i(1), 2);
     return true;
   } else {
-    // not in image
+    //ROS_INFO_STREAM("vsEuclideanToKeypoint failed. Cam:" << cam.name << ", Input: " << point3d);
     return false;
   }
 }

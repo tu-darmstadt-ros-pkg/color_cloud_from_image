@@ -24,6 +24,7 @@ find_package(catkin REQUIRED COMPONENTS
   sm_kinematics
   sm_opencv
   sm_logging
+  geometry_msgs
 )
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++0x")

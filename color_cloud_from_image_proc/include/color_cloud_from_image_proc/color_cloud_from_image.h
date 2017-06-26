@@ -13,6 +13,7 @@
 #include <aslam/cameras.hpp>
 
 #include <tf2_ros/transform_listener.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 // pcl
 #include <pcl/point_cloud.h>
@@ -21,6 +22,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 
 #include <pcl_ros/transforms.h>
+#include <tf2_sensor_msgs/tf2_sensor_msgs.h>
 
 
 namespace color_cloud_from_image {
