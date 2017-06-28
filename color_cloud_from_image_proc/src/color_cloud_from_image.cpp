@@ -4,9 +4,8 @@
 
 namespace color_cloud_from_image {
 
-using namespace aslam::cameras;
-
 ColorCloudFromImage::ColorCloudFromImage() {
+  pcl::console::setVerbosityLevel(pcl::console::L_ERROR); // Disable warnings, so PC copying doesn't complain about missing RGB field
   nh_ = ros::NodeHandle();
 
   it_.reset(new image_transport::ImageTransport(nh_));
@@ -25,55 +24,92 @@ void ColorCloudFromImage::loadCamerasFromNamespace(ros::NodeHandle& nh) {
   nh.getParam("cameras", cams);
   ROS_ASSERT(cams.getType() == XmlRpc::XmlRpcValue::TypeStruct);
   for(XmlRpc::XmlRpcValue::ValueStruct::const_iterator it = cams.begin(); it != cams.end(); ++it) {
-    //ROS_INFO_STREAM("Found cam: " << (std::string)(it->first) << " ==> " << cams[it->first]);
     std::string cam_name = (std::string)(it->first);
-    std::string rostopic = (std::string)cams[it->first]["rostopic"];
-    std::string frame_id = (std::string)cams[it->first]["frame_id"]; // TODO make optional, prob refactor addCamera
     ros::NodeHandle cam_nh(nh, "cameras/" + cam_name);
-    IntrinsicCalibration calibration = loadCalibration(cam_nh);
-    addCamera(cam_name, rostopic, frame_id, calibration);
+    loadCamera(cam_name, cam_nh);
   }
 }
 
-IntrinsicCalibration ColorCloudFromImage::loadCalibration(ros::NodeHandle& nh) {
-  IntrinsicCalibration calibration;
+bool ColorCloudFromImage::loadCalibration(ros::NodeHandle& nh, IntrinsicCalibration& calibration) {
   ROS_INFO_STREAM("Loading intrinsics from nh: " << nh.getNamespace());
-  // TODO make parameters required (throw warning or error)
-  calibration.camera_model = nh.param<std::string>("camera_model", "none");
-  calibration.intrinsics = nh.param<std::vector<double>>("intrinsics", std::vector<double>(5, 0));
-  calibration.distortion_model = nh.param<std::string>("distortion_model", "none");
-  calibration.distortion_params = nh.param<std::vector<double>>("distortion_coeffs", std::vector<double>(4, 0));
-  calibration.resolution = nh.param<std::vector<int>>("resolution", std::vector<int>(2, 0));
-  return calibration;
+  bool valid = true;
+  valid = valid && getParam<std::string>(nh, "camera_model", calibration.camera_model);
+  valid = valid && getParam<std::vector<double>>(nh, "intrinsics", calibration.intrinsics);
+  valid = valid && getParam<std::string>(nh, "distortion_model", calibration.distortion_model);
+  valid = valid && getParam<std::vector<double>>(nh, "distortion_coeffs", calibration.distortion_coeffs);
+  valid = valid && getParam<std::vector<int>>(nh, "resolution", calibration.resolution);
+  return valid;
 }
 
-void ColorCloudFromImage::addCamera(std::string name, std::string topic, std::string frame_id, const IntrinsicCalibration& calibration) {
+void ColorCloudFromImage::loadCamera(std::string name, ros::NodeHandle &nh) {
   Camera cam;
   cam.name = name;
-  cam.frame_id = frame_id;
-  cam.calibration = calibration;
+  std::string rostopic;
+  if (!nh.getParam("rostopic", rostopic)) {
+    ROS_ERROR_STREAM("Could not get parameter " + nh.getNamespace() + "/rostopic");
+    return;
+  }
 
-  // TODO replace with factory dependent on cam and distortion model
-  // TODO check vector lengths first
-  RadialTangentialDistortion distortion(calibration.distortion_params[0], calibration.distortion_params[1],
-                                        calibration.distortion_params[2], calibration.distortion_params[3]);
-  OmniProjection<RadialTangentialDistortion> projection(calibration.intrinsics[0], calibration.intrinsics[1], calibration.intrinsics[2],
-                                                        calibration.intrinsics[3], calibration.intrinsics[4], calibration.resolution[0],
-                                                        calibration.resolution[1], distortion);
+  nh.param<std::string>("frame_id", cam.frame_id, ""); //overrides image frame_id (optional)
+  bool success = loadCalibration(nh, cam.calibration);
+  if (!success) {
+    ROS_ERROR_STREAM("Could not get intrinsic calibration in ns '" << nh.getNamespace() << "'");
+  }
+  RadialTangentialDistortion distortion(cam.calibration.distortion_coeffs[0], cam.calibration.distortion_coeffs[1],
+                                        cam.calibration.distortion_coeffs[2], cam.calibration.distortion_coeffs[3]);
+  OmniProjection<RadialTangentialDistortion> projection(cam.calibration.intrinsics[0], cam.calibration.intrinsics[1], cam.calibration.intrinsics[2],
+                                                        cam.calibration.intrinsics[3], cam.calibration.intrinsics[4], cam.calibration.resolution[0],
+                                                        cam.calibration.resolution[1], distortion);
   cam.camera_model.reset(new CameraGeometry<OmniProjection<RadialTangentialDistortion>, GlobalShutter, NoMask>(projection));
-
-  cam.sub = it_->subscribe(topic, 1, boost::bind(&ColorCloudFromImage::imageCallback, this, name, _1));
   std::pair<std::string, Camera> entry(name, cam);
   ROS_INFO_STREAM("Found cam: " << cam.name << std::endl
-                  << " -- topic: " << topic << std::endl
-                  << " -- frame_id: " << frame_id << std::endl
-                  << intrinsicsToString(calibration));
-  cameras_.emplace(entry);
+                  << " -- topic: " << rostopic << std::endl
+                  << " -- frame_id: " << cam.frame_id << std::endl
+                  << intrinsicsToString(cam.calibration));
+  std::pair<std::map<std::string, Camera>::iterator, bool> result = cameras_.emplace(entry);
+  if (!result.second) {
+    ROS_WARN_STREAM("Couldn't create camera of name '" << cam.name << "' because it already existed.");
+    return;
+  }
+  result.first->second.sub = it_->subscribe(rostopic, 1, boost::bind(&ColorCloudFromImage::imageCallback, this, name, _1));
 }
+
+boost::shared_ptr<CameraGeometryBase> ColorCloudFromImage::createCameraGeometry(const Camera& cam) {
+  if (cam.calibration.distortion_model == "radtan") {
+//    typedef typename distortion_t RadialTangentialDistortion;
+//    distortion_t distortion(cam.calibration.distortion_coeffs[0], cam.calibration.distortion_coeffs[1],
+//        cam.calibration.distortion_coeffs[2], cam.calibration.distortion_coeffs[3]);
+  }
+
+}
+
+//void ColorCloudFromImage::addCamera(std::string name, std::string topic, std::string frame_id, const IntrinsicCalibration& calibration) {
+//  Camera cam;
+//  cam.name = name;
+//  cam.frame_id = frame_id;
+//  cam.calibration = calibration;
+
+//  // TODO replace with factory dependent on cam and distortion model
+//  // TODO check vector lengths first
+//  RadialTangentialDistortion distortion(calibration.distortion_coeffs[0], calibration.distortion_coeffs[1],
+//                                        calibration.distortion_coeffs[2], calibration.distortion_coeffs[3]);
+//  OmniProjection<RadialTangentialDistortion> projection(calibration.intrinsics[0], calibration.intrinsics[1], calibration.intrinsics[2],
+//                                                        calibration.intrinsics[3], calibration.intrinsics[4], calibration.resolution[0],
+//                                                        calibration.resolution[1], distortion);
+//  cam.camera_model.reset(new CameraGeometry<OmniProjection<RadialTangentialDistortion>, GlobalShutter, NoMask>(projection));
+
+//  cam.sub = it_->subscribe(topic, 1, boost::bind(&ColorCloudFromImage::imageCallback, this, name, _1));
+//  std::pair<std::string, Camera> entry(name, cam);
+//  ROS_INFO_STREAM("Found cam: " << cam.name << std::endl
+//                  << " -- topic: " << topic << std::endl
+//                  << " -- frame_id: " << frame_id << std::endl
+//                  << intrinsicsToString(calibration));
+//  cameras_.emplace(entry);
+//}
 
 void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr) {
   pcl::PointCloud<pcl::PointXYZRGB> cloud_out;
-  pcl::fromROSMsg(*cloud_ptr, cloud_out);
+  pcl::fromROSMsg(*cloud_ptr, cloud_out); // complains about missing RGB field if pcl warnings are not disabled
 
   std::vector<bool> has_color(cloud_ptr->height * cloud_ptr->width, false);
   for (std::map<std::string, Camera>::iterator c = cameras_.begin(); c != cameras_.end(); ++c) {
@@ -135,7 +171,7 @@ void ColorCloudFromImage::imageCallback(std::string cam_name, const sensor_msgs:
   try {
     cameras_.at(cam_name).last_image = image_ptr;
   } catch (std::out_of_range) {
-    ROS_ERROR_STREAM("Could not find cam " << cam_name);
+    ROS_ERROR_STREAM("Could not find cam " << cam_name << ". This should not have happened. Please contact the maintainer.");
   }
 }
 
@@ -173,7 +209,7 @@ std::string ColorCloudFromImage::intrinsicsToString(const IntrinsicCalibration& 
   ss << " -- Camera model: " << calibration.camera_model << std::endl;
   ss << " -- Camera coeffs: " << vecToString(calibration.intrinsics) << std::endl;
   ss << " -- Distortion mode: " << calibration.distortion_model << std::endl;
-  ss << " -- Distortion coeffs: " << vecToString(calibration.distortion_params) << std::endl;
+  ss << " -- Distortion coeffs: " << vecToString(calibration.distortion_coeffs) << std::endl;
   ss << " -- Resolution: " << vecToString(calibration.resolution) << std::endl;
   return ss.str();
 }

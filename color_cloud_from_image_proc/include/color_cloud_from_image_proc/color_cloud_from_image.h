@@ -27,6 +27,9 @@
 
 namespace color_cloud_from_image {
 
+  using namespace aslam::cameras;
+
+
   struct Color {
     Color() : r(0), g(0), b(0) {}
     Color(uint8_t _r, uint8_t _g, uint8_t _b)
@@ -41,7 +44,7 @@ namespace color_cloud_from_image {
     std::string camera_model;
     std::vector<double> intrinsics;
     std::string distortion_model;
-    std::vector<double> distortion_params;
+    std::vector<double> distortion_coeffs;
     std::vector<int> resolution;
   };
 
@@ -61,8 +64,9 @@ namespace color_cloud_from_image {
     // add camera with name and calibration
     // create aslam cam instance for projection
     void loadCamerasFromNamespace(ros::NodeHandle &nh);
-    void addCamera(std::string name, std::string topic, std::string frame_id, const IntrinsicCalibration& calibration);
-    IntrinsicCalibration loadCalibration(ros::NodeHandle &nh);
+//    void addCamera(std::string name, std::string topic, std::string frame_id, const IntrinsicCalibration& calibration);
+    void loadCamera(std::string name , ros::NodeHandle &nh);
+    bool loadCalibration(ros::NodeHandle &nh, IntrinsicCalibration &calibration);
   private:
     // save images for respective cam
     void imageCallback(std::string cam_name, const sensor_msgs::ImageConstPtr& image_ptr);
@@ -77,7 +81,17 @@ namespace color_cloud_from_image {
 
     bool worldToColor(const Eigen::Vector3d& point3d, const Camera &cam, Color &color);
 
+    boost::shared_ptr<CameraGeometryBase> createCameraGeometry(const Camera &cam);
+
     std::string intrinsicsToString(const IntrinsicCalibration& calibration);
+    template<typename T> bool getParam(ros::NodeHandle& nh, const std::string& key, T& var) const {
+      if (!nh.getParam(key, var)) {
+        ROS_ERROR_STREAM("Could not get parameter '" + nh.getNamespace() + "/" << key << "'");
+        return false;
+      } else {
+        return true;
+      }
+    }
 
     template<typename T>
     std::string vecToString(const std::vector<T>& vec) {
