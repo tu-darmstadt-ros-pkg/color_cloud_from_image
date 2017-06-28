@@ -29,6 +29,7 @@ namespace color_cloud_from_image {
 
   using namespace aslam::cameras;
 
+  constexpr double INVALID = std::numeric_limits<double>::max();
 
   struct Color {
     Color() : r(0), g(0), b(0) {}
@@ -79,7 +80,7 @@ namespace color_cloud_from_image {
      */
     void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr);
 
-    bool worldToColor(const Eigen::Vector3d& point3d, const Camera &cam, Color &color);
+    double worldToColor(const Eigen::Vector3d& point3d, const Camera &cam, Color &color); // returns distance to middle
 
     boost::shared_ptr<CameraGeometryBase> createCameraGeometry(const Camera &cam);
 

@@ -95,35 +95,18 @@ boost::shared_ptr<CameraGeometryBase> ColorCloudFromImage::createCameraGeometry(
 //  }
 //}
 
-//void ColorCloudFromImage::addCamera(std::string name, std::string topic, std::string frame_id, const IntrinsicCalibration& calibration) {
-//  Camera cam;
-//  cam.name = name;
-//  cam.frame_id = frame_id;
-//  cam.calibration = calibration;
-
-//  // TODO replace with factory dependent on cam and distortion model
-//  // TODO check vector lengths first
-//  RadialTangentialDistortion distortion(calibration.distortion_coeffs[0], calibration.distortion_coeffs[1],
-//                                        calibration.distortion_coeffs[2], calibration.distortion_coeffs[3]);
-//  OmniProjection<RadialTangentialDistortion> projection(calibration.intrinsics[0], calibration.intrinsics[1], calibration.intrinsics[2],
-//                                                        calibration.intrinsics[3], calibration.intrinsics[4], calibration.resolution[0],
-//                                                        calibration.resolution[1], distortion);
-//  cam.camera_model.reset(new CameraGeometry<OmniProjection<RadialTangentialDistortion>, GlobalShutter, NoMask>(projection));
-
-//  cam.sub = it_->subscribe(topic, 1, boost::bind(&ColorCloudFromImage::imageCallback, this, name, _1));
-//  std::pair<std::string, Camera> entry(name, cam);
-//  ROS_INFO_STREAM("Found cam: " << cam.name << std::endl
-//                  << " -- topic: " << topic << std::endl
-//                  << " -- frame_id: " << frame_id << std::endl
-//                  << intrinsicsToString(calibration));
-//  cameras_.emplace(entry);
-//}
-
 void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr) {
   pcl::PointCloud<pcl::PointXYZRGB> cloud_out;
   pcl::fromROSMsg(*cloud_ptr, cloud_out); // complains about missing RGB field if pcl warnings are not disabled
 
-  std::vector<bool> has_color(cloud_ptr->height * cloud_ptr->width, false);
+  // set default color for all pixels without color
+  for (unsigned int i = 0; i < cloud_out.size(); i++) {
+    cloud_out[i].r = 255;
+    cloud_out[i].g = 0;
+    cloud_out[i].b = 0;
+  }
+
+  std::vector<double> sqr_dist(cloud_ptr->height * cloud_ptr->width, INVALID);
   for (std::map<std::string, Camera>::iterator c = cameras_.begin(); c != cameras_.end(); ++c) {
     const Camera& cam = c->second;
     if (cam.last_image) {
@@ -156,15 +139,11 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
       // iterate over each point in cloud
       for (unsigned int i = 0; i < cloud.size(); i++) {
         const pcl::PointXYZ& point = cloud[i];
-        // skip if point already has a color
-        if (has_color[i]) {
-          continue;
-        }
 
         Eigen::Vector3d point_cam(point.x, point.y, point.z);
         Color color;
-        has_color[i] = worldToColor(point_cam, cam, color);
-        if (has_color[i]) {
+        double new_dist = worldToColor(point_cam, cam, color);
+        if (new_dist < sqr_dist[i]) {
           //ROS_INFO_STREAM("Found color! (" << color.r << ", " << color.g << ", " << color.b << ")");
           cloud_out[i].r = color.r;
           cloud_out[i].g = color.g;
@@ -187,7 +166,7 @@ void ColorCloudFromImage::imageCallback(std::string cam_name, const sensor_msgs:
   }
 }
 
-bool ColorCloudFromImage::worldToColor(const Eigen::Vector3d& point3d, const Camera& cam, Color& color) {
+double ColorCloudFromImage::worldToColor(const Eigen::Vector3d& point3d, const Camera& cam, Color& color) {
   boost::shared_ptr<aslam::cameras::CameraGeometryBase> cam_model = cam.camera_model;
   Eigen::VectorXd pixel(2);
   if (cam_model->vsEuclideanToKeypoint(point3d, pixel)) {
@@ -207,9 +186,12 @@ bool ColorCloudFromImage::worldToColor(const Eigen::Vector3d& point3d, const Cam
     color.r = color_vec[0];
     color.g = color_vec[1];
     color.b = color_vec[2];
-    return true;
+
+    double sqr_dist = std::pow(pixel(0) - img.rows / 2.0, 2) + std::pow(pixel(1) - img.cols / 2.0, 2);
+
+    return sqr_dist;
   } else {
-    return false;
+    return INVALID; // kinda hacky?
   }
 }
 
