@@ -75,13 +75,25 @@ void ColorCloudFromImage::loadCamera(std::string name, ros::NodeHandle &nh) {
 }
 
 boost::shared_ptr<CameraGeometryBase> ColorCloudFromImage::createCameraGeometry(const Camera& cam) {
+
   if (cam.calibration.distortion_model == "radtan") {
-//    typedef typename distortion_t RadialTangentialDistortion;
-//    distortion_t distortion(cam.calibration.distortion_coeffs[0], cam.calibration.distortion_coeffs[1],
-//        cam.calibration.distortion_coeffs[2], cam.calibration.distortion_coeffs[3]);
+    RadialTangentialDistortion distortion(cam.calibration.distortion_coeffs[0], cam.calibration.distortion_coeffs[1],
+        cam.calibration.distortion_coeffs[2], cam.calibration.distortion_coeffs[3]);
+
+
   }
 
+
+
+
+
 }
+
+//template <distortion_t> do_something_with_distortion(distortion_t distortion) {
+//  if (cam.calibration.camera_model == "omni") {
+//    OmniProjection projection<distortion_t>(...);
+//  }
+//}
 
 //void ColorCloudFromImage::addCamera(std::string name, std::string topic, std::string frame_id, const IntrinsicCalibration& calibration) {
 //  Camera cam;
@@ -190,10 +202,8 @@ bool ColorCloudFromImage::worldToColor(const Eigen::Vector3d& point3d, const Cam
       return false;
     }
     const cv::Mat& img = cv_image->image;
-//    Eigen::Vector2i pixel_i(std::round(pixel(0)), std::round(pixel(1)));
-    // TODO mirror needed?
-    Eigen::Vector2i pixel_i(cam.calibration.resolution[0] - std::round(pixel(0)), std::round(pixel(1)));
-    cv::Vec3b color_vec = img.at<cv::Vec3b>(pixel_i(0), pixel_i(1));
+    Eigen::Vector2i pixel_i(std::round(pixel(0)), std::round(pixel(1)));
+    cv::Vec3b color_vec = img.at<cv::Vec3b>(pixel_i(1), pixel_i(0));
     color.r = color_vec[0];
     color.g = color_vec[1];
     color.b = color_vec[2];
