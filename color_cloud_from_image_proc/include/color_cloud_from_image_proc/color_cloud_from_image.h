@@ -24,6 +24,8 @@
 #include <pcl_ros/transforms.h>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.h>
 
+#include "robot_self_filter/self_see_filter.h"
+
 
 namespace color_cloud_from_image {
 
@@ -115,6 +117,9 @@ namespace color_cloud_from_image {
     boost::shared_ptr<image_transport::ImageTransport> it_;
     boost::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     boost::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+
+    boost::shared_ptr<filters::SelfFilter<pcl::PointCloud<pcl::PointXYZ> > > self_filter_;
+
     ros::Subscriber cloud_sub_;
     ros::Publisher cloud_pub_;
     ros::Publisher cloud_debug_pub_;

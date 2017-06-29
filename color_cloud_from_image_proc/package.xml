@@ -30,6 +30,7 @@
   <depend>sm_kinematics</depend>
   <depend>sm_opencv</depend>
   <depend>sm_logging</depend>
+  <depend>robot_self_filter</depend>
 
   <export>
     <nodelet plugin="${prefix}/nodelet_plugins.xml" />

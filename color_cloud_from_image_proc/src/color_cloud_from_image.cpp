@@ -12,6 +12,7 @@ ColorCloudFromImage::ColorCloudFromImage() {
   tf_buffer_.reset(new tf2_ros::Buffer());
   tf_listener_.reset(new tf2_ros::TransformListener(*tf_buffer_));
 
+  self_filter_.reset(new filters::SelfFilter<pcl::PointCloud<pcl::PointXYZ> >(nh_));
 
   cloud_sub_ = nh_.subscribe("cloud", 10, &ColorCloudFromImage::cloudCallback, this);
   cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("colored_cloud", 1000, false);
@@ -136,8 +137,16 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
       pcl::PointCloud<pcl::PointXYZ> cloud;
       pcl::fromROSMsg(cloud_cam_frame, cloud);
 
+      pcl::PointCloud<pcl::PointXYZ> cloud_filtered;
+      std::vector<int> filter_mask;
+      self_filter_->updateWithSensorFrameAndMask(cloud, cloud_filtered, cam_frame_id,  filter_mask);
+
       // iterate over each point in cloud
       for (unsigned int i = 0; i < cloud.size(); i++) {
+
+        if (filter_mask[i] != robot_self_filter::OUTSIDE)
+          continue;
+
         const pcl::PointXYZ& point = cloud[i];
 
         Eigen::Vector3d point_cam(point.x, point.y, point.z);
