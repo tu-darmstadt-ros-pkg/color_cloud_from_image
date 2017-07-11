@@ -15,8 +15,24 @@ ColorCloudFromImage::ColorCloudFromImage() {
   self_filter_.reset(new filters::SelfFilter<pcl::PointCloud<pcl::PointXYZ> >(nh_));
 
   cloud_sub_ = nh_.subscribe("cloud", 10, &ColorCloudFromImage::cloudCallback, this);
-  cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("colored_cloud", 1000, false);
-  cloud_debug_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("debug_cloud", 1000, false);
+
+
+  self_filter_->getSelfMask()->getLinkNames(frames);
+  if (frames.empty())
+  {
+    ROS_INFO ("No valid frames have been passed into the self filter. Using a callback that will just forward scans on.");
+    no_filter_sub_ = root_handle_.subscribe<sensor_msgs::PointCloud2> ("cloud_in", 1, boost::bind(&SelfFilter::noFilterCallback, this, _1));
+  }
+  else
+  {
+    ROS_INFO ("Valid frames were passed in. We'll filter them.");
+    mn_->setTargetFrames (frames);
+    mn_->registerCallback (boost::bind (&SelfFilter::cloudCallback, this, _1));
+  }
+
+
+  cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("colored_cloud", 100, false);
+  cloud_debug_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("debug_cloud", 100, false);
 }
 
 void ColorCloudFromImage::loadCamerasFromNamespace(ros::NodeHandle& nh) {
