@@ -31,17 +31,6 @@ namespace color_cloud_from_image {
 
   using namespace aslam::cameras;
 
-  constexpr double INVALID = std::numeric_limits<double>::max();
-
-  struct Color {
-    Color() : r(0), g(0), b(0) {}
-    Color(uint8_t _r, uint8_t _g, uint8_t _b)
-      : r(_r), g(_g), b(_b) {}
-
-    double r, g, b;
-  };
-
-
   class ColorCloudFromImage {
   public:
     ColorCloudFromImage();
@@ -55,9 +44,6 @@ namespace color_cloud_from_image {
      * 5. republish cloud
      */
     void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr);
-
-    double worldToColor(const Eigen::Vector3d& point3d, const camera_model::Camera &cam, Color &color); // returns distance to middle
-
 
     ros::NodeHandle nh_;
     sensor_msgs::PointCloud2 last_cloud_;
