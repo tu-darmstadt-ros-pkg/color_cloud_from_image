@@ -8,7 +8,6 @@ ColorCloudFromImage::ColorCloudFromImage() {
   pcl::console::setVerbosityLevel(pcl::console::L_ERROR); // Disable warnings, so PC copying doesn't complain about missing RGB field
   nh_ = ros::NodeHandle();
 
-  it_.reset(new image_transport::ImageTransport(nh_));
   tf_buffer_.reset(new tf2_ros::Buffer());
   tf_listener_.reset(new tf2_ros::TransformListener(*tf_buffer_));
 
@@ -18,82 +17,10 @@ ColorCloudFromImage::ColorCloudFromImage() {
   cloud_debug_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("debug_cloud", 1000, false);
 }
 
-void ColorCloudFromImage::loadCamerasFromNamespace(ros::NodeHandle& nh) {
-  ROS_INFO_STREAM("Loading parameters from namespace " << nh.getNamespace() + "/cameras");
-  XmlRpc::XmlRpcValue cams;
-  nh.getParam("cameras", cams);
-  ROS_ASSERT(cams.getType() == XmlRpc::XmlRpcValue::TypeStruct);
-  for(XmlRpc::XmlRpcValue::ValueStruct::const_iterator it = cams.begin(); it != cams.end(); ++it) {
-    std::string cam_name = (std::string)(it->first);
-    ros::NodeHandle cam_nh(nh, "cameras/" + cam_name);
-    loadCamera(cam_name, cam_nh);
-  }
+bool ColorCloudFromImage::loadCamerasFromNamespace(ros::NodeHandle& nh) {
+  return camera_model_loader_.loadCamerasFromNamespace(nh);
 }
 
-bool ColorCloudFromImage::loadCalibration(ros::NodeHandle& nh, IntrinsicCalibration& calibration) {
-  ROS_INFO_STREAM("Loading intrinsics from nh: " << nh.getNamespace());
-  bool valid = true;
-  valid = valid && getParam<std::string>(nh, "camera_model", calibration.camera_model);
-  valid = valid && getParam<std::vector<double>>(nh, "intrinsics", calibration.intrinsics);
-  valid = valid && getParam<std::string>(nh, "distortion_model", calibration.distortion_model);
-  valid = valid && getParam<std::vector<double>>(nh, "distortion_coeffs", calibration.distortion_coeffs);
-  valid = valid && getParam<std::vector<int>>(nh, "resolution", calibration.resolution);
-  return valid;
-}
-
-void ColorCloudFromImage::loadCamera(std::string name, ros::NodeHandle &nh) {
-  Camera cam;
-  cam.name = name;
-  std::string rostopic;
-  if (!nh.getParam("rostopic", rostopic)) {
-    ROS_ERROR_STREAM("Could not get parameter " + nh.getNamespace() + "/rostopic");
-    return;
-  }
-
-  nh.param<std::string>("frame_id", cam.frame_id, ""); //overrides image frame_id (optional)
-  bool success = loadCalibration(nh, cam.calibration);
-  if (!success) {
-    ROS_ERROR_STREAM("Could not get intrinsic calibration in ns '" << nh.getNamespace() << "'");
-  }
-  RadialTangentialDistortion distortion(cam.calibration.distortion_coeffs[0], cam.calibration.distortion_coeffs[1],
-                                        cam.calibration.distortion_coeffs[2], cam.calibration.distortion_coeffs[3]);
-  OmniProjection<RadialTangentialDistortion> projection(cam.calibration.intrinsics[0], cam.calibration.intrinsics[1], cam.calibration.intrinsics[2],
-                                                        cam.calibration.intrinsics[3], cam.calibration.intrinsics[4], cam.calibration.resolution[0],
-                                                        cam.calibration.resolution[1], distortion);
-  cam.camera_model.reset(new CameraGeometry<OmniProjection<RadialTangentialDistortion>, GlobalShutter, NoMask>(projection));
-  std::pair<std::string, Camera> entry(name, cam);
-  ROS_INFO_STREAM("Found cam: " << cam.name << std::endl
-                  << " -- topic: " << rostopic << std::endl
-                  << " -- frame_id: " << cam.frame_id << std::endl
-                  << intrinsicsToString(cam.calibration));
-  std::pair<std::map<std::string, Camera>::iterator, bool> result = cameras_.emplace(entry);
-  if (!result.second) {
-    ROS_WARN_STREAM("Couldn't create camera of name '" << cam.name << "' because it already existed.");
-    return;
-  }
-  result.first->second.sub = it_->subscribe(rostopic, 1, boost::bind(&ColorCloudFromImage::imageCallback, this, name, _1));
-}
-
-boost::shared_ptr<CameraGeometryBase> ColorCloudFromImage::createCameraGeometry(const Camera& cam) {
-
-  if (cam.calibration.distortion_model == "radtan") {
-    RadialTangentialDistortion distortion(cam.calibration.distortion_coeffs[0], cam.calibration.distortion_coeffs[1],
-        cam.calibration.distortion_coeffs[2], cam.calibration.distortion_coeffs[3]);
-
-
-  }
-
-
-
-
-
-}
-
-//template <distortion_t> do_something_with_distortion(distortion_t distortion) {
-//  if (cam.calibration.camera_model == "omni") {
-//    OmniProjection projection<distortion_t>(...);
-//  }
-//}
 
 void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr) {
   pcl::PointCloud<pcl::PointXYZRGB> cloud_out;
@@ -107,8 +34,8 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
   }
 
   std::vector<double> sqr_dist(cloud_ptr->height * cloud_ptr->width, INVALID);
-  for (std::map<std::string, Camera>::iterator c = cameras_.begin(); c != cameras_.end(); ++c) {
-    const Camera& cam = c->second;
+  for (std::map<std::string, camera_model::Camera>::const_iterator c = camera_model_loader_.getCameraMap().begin(); c != camera_model_loader_.getCameraMap().end(); ++c) {
+    const camera_model::Camera& cam = c->second;
     if (cam.last_image) {
       // get transform to camera frame
       geometry_msgs::TransformStamped transform;
@@ -158,15 +85,7 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
   cloud_pub_.publish(cloud_out_msg);
 }
 
-void ColorCloudFromImage::imageCallback(std::string cam_name, const sensor_msgs::ImageConstPtr& image_ptr) {
-  try {
-    cameras_.at(cam_name).last_image = image_ptr;
-  } catch (std::out_of_range) {
-    ROS_ERROR_STREAM("Could not find cam " << cam_name << ". This should not have happened. Please contact the maintainer.");
-  }
-}
-
-double ColorCloudFromImage::worldToColor(const Eigen::Vector3d& point3d, const Camera& cam, Color& color) {
+double ColorCloudFromImage::worldToColor(const Eigen::Vector3d& point3d, const camera_model::Camera& cam, Color& color) {
   boost::shared_ptr<aslam::cameras::CameraGeometryBase> cam_model = cam.camera_model;
   Eigen::VectorXd pixel(2);
   if (cam_model->vsEuclideanToKeypoint(point3d, pixel)) {
@@ -193,17 +112,6 @@ double ColorCloudFromImage::worldToColor(const Eigen::Vector3d& point3d, const C
   } else {
     return INVALID; // kinda hacky?
   }
-}
-
-std::string ColorCloudFromImage::intrinsicsToString(const IntrinsicCalibration& calibration) {
-  std::stringstream ss;
-  ss << "Intrinsic calibration:" << std::endl;
-  ss << " -- Camera model: " << calibration.camera_model << std::endl;
-  ss << " -- Camera coeffs: " << vecToString(calibration.intrinsics) << std::endl;
-  ss << " -- Distortion mode: " << calibration.distortion_model << std::endl;
-  ss << " -- Distortion coeffs: " << vecToString(calibration.distortion_coeffs) << std::endl;
-  ss << " -- Resolution: " << vecToString(calibration.resolution) << std::endl;
-  return ss.str();
 }
 
 }
