@@ -26,6 +26,9 @@
 
 #include "robot_self_filter/self_see_filter.h"
 
+#include <tf2_ros/message_filter.h>
+#include <message_filters/subscriber.h>
+
 
 namespace color_cloud_from_image {
 
@@ -84,7 +87,7 @@ namespace color_cloud_from_image {
 
     double worldToColor(const Eigen::Vector3d& point3d, const Camera &cam, Color &color); // returns distance to middle
 
-    boost::shared_ptr<CameraGeometryBase> createCameraGeometry(const Camera &cam);
+    //boost::shared_ptr<CameraGeometryBase> createCameraGeometry(const Camera &cam);
 
     std::string intrinsicsToString(const IntrinsicCalibration& calibration);
     template<typename T> bool getParam(ros::NodeHandle& nh, const std::string& key, T& var) const {
@@ -120,9 +123,16 @@ namespace color_cloud_from_image {
 
     boost::shared_ptr<filters::SelfFilter<pcl::PointCloud<pcl::PointXYZ> > > self_filter_;
 
-    ros::Subscriber cloud_sub_;
+    //ros::Subscriber cloud_sub_;
     ros::Publisher cloud_pub_;
     ros::Publisher cloud_debug_pub_;
+
+    std::vector<std::string> filter_frames_;
+
+    tf2_ros::MessageFilter<sensor_msgs::PointCloud2>           *mn_;
+    message_filters::Subscriber<sensor_msgs::PointCloud2> *sub_;
+
+    ros::Subscriber no_filter_sub_;
 
   };
 }

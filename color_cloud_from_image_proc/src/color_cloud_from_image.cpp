@@ -14,20 +14,22 @@ ColorCloudFromImage::ColorCloudFromImage() {
 
   self_filter_.reset(new filters::SelfFilter<pcl::PointCloud<pcl::PointXYZ> >(nh_));
 
-  cloud_sub_ = nh_.subscribe("cloud", 10, &ColorCloudFromImage::cloudCallback, this);
+  //cloud_sub_ = nh_.subscribe("cloud", 10, &ColorCloudFromImage::cloudCallback, this);
 
+  sub_ = new message_filters::Subscriber<sensor_msgs::PointCloud2> (nh_, "cloud_in", 10);
+  mn_ = new tf2_ros::MessageFilter<sensor_msgs::PointCloud2> (*sub_, *tf_buffer_, "", 30, nh_);
 
-  self_filter_->getSelfMask()->getLinkNames(frames);
-  if (frames.empty())
+  self_filter_->getSelfMask()->getLinkNames(filter_frames_);
+  if (filter_frames_.empty())
   {
-    ROS_INFO ("No valid frames have been passed into the self filter. Using a callback that will just forward scans on.");
-    no_filter_sub_ = root_handle_.subscribe<sensor_msgs::PointCloud2> ("cloud_in", 1, boost::bind(&SelfFilter::noFilterCallback, this, _1));
+    ROS_INFO ("No valid frames have been passed into the cloud color self filter. Will not filter for robot parts.");
+    no_filter_sub_ = nh_.subscribe<sensor_msgs::PointCloud2> ("cloud", 10, boost::bind(&ColorCloudFromImage::cloudCallback, this, _1));
   }
   else
   {
     ROS_INFO ("Valid frames were passed in. We'll filter them.");
-    mn_->setTargetFrames (frames);
-    mn_->registerCallback (boost::bind (&SelfFilter::cloudCallback, this, _1));
+    mn_->setTargetFrames (filter_frames_);
+    mn_->registerCallback (boost::bind (&ColorCloudFromImage::cloudCallback, this, _1));
   }
 
 
@@ -91,6 +93,7 @@ void ColorCloudFromImage::loadCamera(std::string name, ros::NodeHandle &nh) {
   result.first->second.sub = it_->subscribe(rostopic, 1, boost::bind(&ColorCloudFromImage::imageCallback, this, name, _1));
 }
 
+/*
 boost::shared_ptr<CameraGeometryBase> ColorCloudFromImage::createCameraGeometry(const Camera& cam) {
 
   if (cam.calibration.distortion_model == "radtan") {
@@ -105,6 +108,7 @@ boost::shared_ptr<CameraGeometryBase> ColorCloudFromImage::createCameraGeometry(
 
 
 }
+*/
 
 //template <distortion_t> do_something_with_distortion(distortion_t distortion) {
 //  if (cam.calibration.camera_model == "omni") {
@@ -153,14 +157,19 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
       pcl::PointCloud<pcl::PointXYZ> cloud;
       pcl::fromROSMsg(cloud_cam_frame, cloud);
 
-      pcl::PointCloud<pcl::PointXYZ> cloud_filtered;
-      std::vector<int> filter_mask;
-      self_filter_->updateWithSensorFrameAndMask(cloud, cloud_filtered, cam_frame_id,  filter_mask);
+      bool use_self_filter = !filter_frames_.empty();
+
+      std::vector<int> self_filter_mask;
+
+      if (use_self_filter){
+        pcl::PointCloud<pcl::PointXYZ> cloud_filtered;
+        self_filter_->updateWithSensorFrameAndMask(cloud, cloud_filtered, cam_frame_id,  self_filter_mask);
+      }
 
       // iterate over each point in cloud
       for (unsigned int i = 0; i < cloud.size(); i++) {
 
-        if (filter_mask[i] != robot_self_filter::OUTSIDE)
+        if (use_self_filter && (self_filter_mask[i] != robot_self_filter::OUTSIDE) )
           continue;
 
         const pcl::PointXYZ& point = cloud[i];
@@ -192,7 +201,7 @@ void ColorCloudFromImage::imageCallback(std::string cam_name, const sensor_msgs:
 }
 
 double ColorCloudFromImage::worldToColor(const Eigen::Vector3d& point3d, const Camera& cam, Color& color) {
-  boost::shared_ptr<aslam::cameras::CameraGeometryBase> cam_model = cam.camera_model;
+  const boost::shared_ptr<aslam::cameras::CameraGeometryBase>& cam_model = cam.camera_model;
   Eigen::VectorXd pixel(2);
   if (cam_model->vsEuclideanToKeypoint(point3d, pixel)) {
     cv_bridge::CvImageConstPtr cv_image;
