@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <launch>
     
-  <rosparam file="$(find hector_tracked_vehicles_self_filter)/config/self_filter_argo_tracker.yaml" command="load" ns="color_cloud_from_image_node" />   
+  <rosparam file="$(find color_cloud_from_image_proc)/config/self_filter_argo_tracker.yaml" command="load" ns="color_cloud_from_image_node" />   
       
   <node pkg="color_cloud_from_image_proc" type="color_cloud_from_image_proc_node" name="color_cloud_from_image_node" output="screen">
 <!--     <param name="velocity_factor" value="1" /> -->

@@ -95,8 +95,8 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
       // iterate over each point in cloud
       for (unsigned int i = 0; i < cloud.size(); i++) {
 
-        //if (use_self_filter && (self_filter_mask[i] != robot_self_filter::OUTSIDE) )
-        //  continue;
+        if (use_self_filter && (self_filter_mask[i] != robot_self_filter::OUTSIDE) )
+          continue;
 
         const pcl::PointXYZ& point = cloud[i];
 

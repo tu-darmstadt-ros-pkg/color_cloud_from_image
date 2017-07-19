@@ -1,0 +1,16 @@
+min_sensor_dist: .15
+self_see_default_padding: 0.0
+self_see_default_scale: 1.0
+self_see_links:
+- name: chassis_link
+- name: arm_link_0
+- name: arm_link_1
+- name: arm_link_2
+- name: arm_link_3
+- name: arm_link_4
+#- name: structure_addons_link
+- name: flipper_link_0
+- name: flipper_link_1
+
+
+
