@@ -29,53 +29,18 @@
 #include <tf2_ros/message_filter.h>
 #include <message_filters/subscriber.h>
 
+#include <camera_model_loader/camera_model_loader.h>
+
 
 namespace color_cloud_from_image {
 
   using namespace aslam::cameras;
 
-  constexpr double INVALID = std::numeric_limits<double>::max();
-
-  struct Color {
-    Color() : r(0), g(0), b(0) {}
-    Color(uint8_t _r, uint8_t _g, uint8_t _b)
-      : r(_r), g(_g), b(_b) {}
-
-    double r, g, b;
-  };
-
-  struct IntrinsicCalibration {
-//    double xi, fu, fv, cu, cv, ru, rv;
-//    double k1, k2, p1, p2;
-    std::string camera_model;
-    std::vector<double> intrinsics;
-    std::string distortion_model;
-    std::vector<double> distortion_coeffs;
-    std::vector<int> resolution;
-  };
-
-  struct Camera {
-    std::string name;
-    IntrinsicCalibration calibration;
-    sensor_msgs::ImageConstPtr last_image;
-    boost::shared_ptr<aslam::cameras::CameraGeometryBase> camera_model;
-    image_transport::Subscriber sub;
-    std::string frame_id; //overrides header.frame_id if set
-  };
-
-
   class ColorCloudFromImage {
   public:
     ColorCloudFromImage();
-    // add camera with name and calibration
-    // create aslam cam instance for projection
-    void loadCamerasFromNamespace(ros::NodeHandle &nh);
-//    void addCamera(std::string name, std::string topic, std::string frame_id, const IntrinsicCalibration& calibration);
-    void loadCamera(std::string name , ros::NodeHandle &nh);
-    bool loadCalibration(ros::NodeHandle &nh, IntrinsicCalibration &calibration);
+    bool loadCamerasFromNamespace(ros::NodeHandle &nh);
   private:
-    // save images for respective cam
-    void imageCallback(std::string cam_name, const sensor_msgs::ImageConstPtr& image_ptr);
     /* on new pc:
      * 1. iterate over each point
      * 2. transform point to cam frame
@@ -85,39 +50,11 @@ namespace color_cloud_from_image {
      */
     void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr);
 
-    double worldToColor(const Eigen::Vector3d& point3d, const Camera &cam, Color &color); // returns distance to middle
-
-    //boost::shared_ptr<CameraGeometryBase> createCameraGeometry(const Camera &cam);
-
-    std::string intrinsicsToString(const IntrinsicCalibration& calibration);
-    template<typename T> bool getParam(ros::NodeHandle& nh, const std::string& key, T& var) const {
-      if (!nh.getParam(key, var)) {
-        ROS_ERROR_STREAM("Could not get parameter '" + nh.getNamespace() + "/" << key << "'");
-        return false;
-      } else {
-        return true;
-      }
-    }
-
-    template<typename T>
-    std::string vecToString(const std::vector<T>& vec) {
-      std::stringstream ss;
-      ss << "[";
-      for (unsigned int i = 0; i < vec.size(); ++i) {
-        ss << vec[i];
-        if (i != vec.size() -1) {
-          ss << ", ";
-        }
-      }
-      ss << "]";
-      return ss.str();
-    }
-
     ros::NodeHandle nh_, pnh_;
-    sensor_msgs::PointCloud2 last_cloud_;
-    std::map<std::string, Camera> cameras_;
 
-    boost::shared_ptr<image_transport::ImageTransport> it_;
+    sensor_msgs::PointCloud2 last_cloud_;
+
+    camera_model::CameraModelLoader camera_model_loader_;
     boost::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     boost::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 

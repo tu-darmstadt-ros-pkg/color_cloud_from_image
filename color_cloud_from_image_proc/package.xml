@@ -13,23 +13,19 @@
   <license>BSD</license>
 
   <buildtool_depend>catkin</buildtool_depend>
-  <depend>cv_bridge</depend>
-  <depend>image_transport</depend>
+  <depend>camera_model_loader</depend>
   <depend>nodelet</depend>
   <depend>pcl_ros</depend>
-  <depend>roscpp</depend>
-  <depend>sensor_msgs</depend>
-  <depend>geometry_msgs</depend>
   <depend>tf</depend>
   <depend>tf_conversions</depend>
-  <depend>aslam_cameras</depend>
+  <!--<depend>aslam_cameras</depend>
   <depend>aslam_time</depend>
   <depend>sm_boost</depend>
   <depend>sm_property_tree</depend>
   <depend>sm_eigen</depend>
   <depend>sm_kinematics</depend>
   <depend>sm_opencv</depend>
-  <depend>sm_logging</depend>
+  <depend>sm_logging</depend>-->
   <depend>robot_self_filter</depend>
 
   <export>
