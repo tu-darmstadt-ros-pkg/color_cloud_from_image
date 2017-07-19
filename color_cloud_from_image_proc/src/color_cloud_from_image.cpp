@@ -17,12 +17,11 @@ ColorCloudFromImage::ColorCloudFromImage() {
 
   //cloud_sub_ = nh_.subscribe("cloud", 10, &ColorCloudFromImage::cloudCallback, this);
 
-  sub_ = new message_filters::Subscriber<sensor_msgs::PointCloud2> (nh_, "cloud_in", 10);
+  sub_ = new message_filters::Subscriber<sensor_msgs::PointCloud2> (nh_, "cloud", 10);
   mn_ = new tf2_ros::MessageFilter<sensor_msgs::PointCloud2> (*sub_, *tf_buffer_, "", 30, nh_);
 
   self_filter_->getSelfMask()->getLinkNames(filter_frames_);
-  //if (filter_frames_.empty())
-  if (true)
+  if (filter_frames_.empty())
   {
     ROS_INFO ("No valid frames have been passed into the cloud color self filter. Will not filter for robot parts.");
     no_filter_sub_ = nh_.subscribe<sensor_msgs::PointCloud2> ("cloud", 10, boost::bind(&ColorCloudFromImage::cloudCallback, this, _1));
