@@ -12,7 +12,9 @@ ColorCloudFromImage::ColorCloudFromImage() {
   tf_buffer_.reset(new tf2_ros::Buffer());
   tf_listener_.reset(new tf2_ros::TransformListener(*tf_buffer_));
 
-  self_filter_.reset(new filters::SelfFilter<pcl::PointCloud<pcl::PointXYZ> >(nh_));
+  pnh_ = ros::NodeHandle("~");
+
+  self_filter_.reset(new filters::SelfFilter<pcl::PointCloud<pcl::PointXYZ> >(pnh_));
 
   //cloud_sub_ = nh_.subscribe("cloud", 10, &ColorCloudFromImage::cloudCallback, this);
 
@@ -20,7 +22,8 @@ ColorCloudFromImage::ColorCloudFromImage() {
   mn_ = new tf2_ros::MessageFilter<sensor_msgs::PointCloud2> (*sub_, *tf_buffer_, "", 30, nh_);
 
   self_filter_->getSelfMask()->getLinkNames(filter_frames_);
-  if (filter_frames_.empty())
+  //if (filter_frames_.empty())
+  if (true)
   {
     ROS_INFO ("No valid frames have been passed into the cloud color self filter. Will not filter for robot parts.");
     no_filter_sub_ = nh_.subscribe<sensor_msgs::PointCloud2> ("cloud", 10, boost::bind(&ColorCloudFromImage::cloudCallback, this, _1));
@@ -169,8 +172,8 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
       // iterate over each point in cloud
       for (unsigned int i = 0; i < cloud.size(); i++) {
 
-        if (use_self_filter && (self_filter_mask[i] != robot_self_filter::OUTSIDE) )
-          continue;
+        //if (use_self_filter && (self_filter_mask[i] != robot_self_filter::OUTSIDE) )
+        //  continue;
 
         const pcl::PointXYZ& point = cloud[i];
 

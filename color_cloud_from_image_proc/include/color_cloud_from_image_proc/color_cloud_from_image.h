@@ -113,7 +113,7 @@ namespace color_cloud_from_image {
       return ss.str();
     }
 
-    ros::NodeHandle nh_;
+    ros::NodeHandle nh_, pnh_;
     sensor_msgs::PointCloud2 last_cloud_;
     std::map<std::string, Camera> cameras_;
 
