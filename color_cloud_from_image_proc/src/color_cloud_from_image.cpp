@@ -56,14 +56,14 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
   std::vector<double> sqr_dist(cloud_ptr->height * cloud_ptr->width, camera_model::INVALID);
   for (std::map<std::string, camera_model::Camera>::const_iterator c = camera_model_loader_.getCameraMap().begin(); c != camera_model_loader_.getCameraMap().end(); ++c) {
     const camera_model::Camera& cam = c->second;
-    if (cam.last_image) {
+    if (cam.getLastImage()) {
       // get transform to camera frame
       geometry_msgs::TransformStamped transform;
       std::string cam_frame_id;
-      if (cam.frame_id != "") {
-        cam_frame_id = cam.frame_id;
+      if (cam.getFrameId() != "") {
+        cam_frame_id = cam.getFrameId();
       } else {
-        cam_frame_id = cam.last_image->header.frame_id;
+        cam_frame_id = cam.getLastImage()->header.frame_id;
       }
 
       try {
@@ -76,7 +76,7 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
       sensor_msgs::PointCloud2 cloud_cam_frame;
       tf2::doTransform(*cloud_ptr, cloud_cam_frame, transform); // TODO transform points individually after checking if they already have a color
       cloud_cam_frame.header.frame_id = cam_frame_id;
-      if (cam.name == "cam0") {
+      if (cam.getName() == "cam0") {
         cloud_debug_pub_.publish(cloud_cam_frame);
       }
       // transform to pcl
