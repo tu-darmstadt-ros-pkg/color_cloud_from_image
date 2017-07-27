@@ -7,9 +7,10 @@ namespace color_cloud_from_image {
 
 class ColorCloudFromImageNodelet : public nodelet::Nodelet {
   virtual void onInit() {
-    color_cloud_.reset(new ColorCloudFromImage());
-    ros::NodeHandle nh("~");
-    color_cloud_->loadCamerasFromNamespace(nh);
+    ros::NodeHandle &nh = getNodeHandle();
+    ros::NodeHandle &pnh = getPrivateNodeHandle();
+    color_cloud_.reset(new ColorCloudFromImage(nh, pnh));
+    color_cloud_->loadCamerasFromNamespace(pnh);
   }
 
   boost::shared_ptr<ColorCloudFromImage> color_cloud_;

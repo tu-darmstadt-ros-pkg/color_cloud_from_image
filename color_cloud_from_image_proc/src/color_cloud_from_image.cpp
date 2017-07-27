@@ -4,9 +4,9 @@
 
 namespace color_cloud_from_image {
 
-ColorCloudFromImage::ColorCloudFromImage() {
+ColorCloudFromImage::ColorCloudFromImage(ros::NodeHandle& nh, ros::NodeHandle& pnh)
+  : nh_(nh){
   pcl::console::setVerbosityLevel(pcl::console::L_ERROR); // Disable warnings, so PC copying doesn't complain about missing RGB field
-  nh_ = ros::NodeHandle();
 
   tf_buffer_.reset(new tf2_ros::Buffer());
   tf_listener_.reset(new tf2_ros::TransformListener(*tf_buffer_));
@@ -39,7 +39,12 @@ ColorCloudFromImage::ColorCloudFromImage() {
 }
 
 bool ColorCloudFromImage::loadCamerasFromNamespace(ros::NodeHandle& nh) {
-  return camera_model_loader_.loadCamerasFromNamespace(nh);
+  if (camera_model_loader_.loadCamerasFromNamespace(nh)) {
+    camera_model_loader_.startSubscribers();
+    return true;
+  } else {
+    return false;
+  }
 }
 
 void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr) {

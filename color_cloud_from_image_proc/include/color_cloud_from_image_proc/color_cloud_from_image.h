@@ -38,7 +38,7 @@ namespace color_cloud_from_image {
 
   class ColorCloudFromImage {
   public:
-    ColorCloudFromImage();
+    ColorCloudFromImage(ros::NodeHandle &nh, ros::NodeHandle &pnh);
     bool loadCamerasFromNamespace(ros::NodeHandle &nh);
   private:
     /* on new pc:
