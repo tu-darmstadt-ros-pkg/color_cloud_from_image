@@ -10,7 +10,6 @@ class ColorCloudFromImageNodelet : public nodelet::Nodelet {
     ros::NodeHandle &nh = getNodeHandle();
     ros::NodeHandle &pnh = getPrivateNodeHandle();
     color_cloud_.reset(new ColorCloudFromImage(nh, pnh));
-    color_cloud_->loadCamerasFromNamespace(pnh);
   }
 
   boost::shared_ptr<ColorCloudFromImage> color_cloud_;

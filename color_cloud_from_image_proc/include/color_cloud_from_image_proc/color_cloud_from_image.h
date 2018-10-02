@@ -39,7 +39,6 @@ namespace color_cloud_from_image {
   class ColorCloudFromImage {
   public:
     ColorCloudFromImage(ros::NodeHandle &nh, ros::NodeHandle &pnh);
-    bool loadCamerasFromNamespace(ros::NodeHandle &nh);
   private:
     /* on new pc:
      * 1. iterate over each point
@@ -49,8 +48,15 @@ namespace color_cloud_from_image {
      * 5. republish cloud
      */
     void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr);
+    void connectCb();
+
+    void startSubscribers();
+    void stopSubscribers();
 
     ros::NodeHandle nh_, pnh_;
+
+    bool lazy_;
+    bool enabled_;
 
     sensor_msgs::PointCloud2 last_cloud_;
 
@@ -59,6 +65,7 @@ namespace color_cloud_from_image {
     boost::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
     boost::shared_ptr<filters::SelfFilter<pcl::PointCloud<pcl::PointXYZ> > > self_filter_;
+    bool use_self_filter_;
 
     //ros::Subscriber cloud_sub_;
     ros::Publisher cloud_pub_;

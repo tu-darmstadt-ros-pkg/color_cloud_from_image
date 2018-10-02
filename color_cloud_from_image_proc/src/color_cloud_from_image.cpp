@@ -13,39 +13,44 @@ ColorCloudFromImage::ColorCloudFromImage(ros::NodeHandle& nh, ros::NodeHandle& p
 
   self_filter_.reset(new filters::SelfFilter<pcl::PointCloud<pcl::PointXYZ> >(pnh_));
 
-  //cloud_sub_ = nh_.subscribe("cloud", 10, &ColorCloudFromImage::cloudCallback, this);
-
-  sub_ = new message_filters::Subscriber<sensor_msgs::PointCloud2> (nh_, "cloud", 10);
+  sub_ = new message_filters::Subscriber<sensor_msgs::PointCloud2>();
   mn_ = new tf2_ros::MessageFilter<sensor_msgs::PointCloud2> (*sub_, *tf_buffer_, "", 30, nh_);
 
   self_filter_->getSelfMask()->getLinkNames(filter_frames_);
-  if (filter_frames_.empty())
-  {
-    ROS_INFO ("No valid frames have been passed into the cloud color self filter. Will not filter for robot parts.");
-    no_filter_sub_ = nh_.subscribe<sensor_msgs::PointCloud2> ("cloud", 10, boost::bind(&ColorCloudFromImage::cloudCallback, this, _1));
-  }
-  else
+  use_self_filter_ = !filter_frames_.empty();
+  if (use_self_filter_)
   {
     ROS_INFO ("Valid frames were passed in. We'll filter them.");
     mn_->setTargetFrames (filter_frames_);
     mn_->registerCallback (boost::bind (&ColorCloudFromImage::cloudCallback, this, _1));
   }
-
-
-  cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("colored_cloud", 100, false);
-  cloud_debug_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("debug_cloud", 100, false);
-}
-
-bool ColorCloudFromImage::loadCamerasFromNamespace(ros::NodeHandle& nh) {
-  if (camera_model_loader_.loadCamerasFromNamespace(nh)) {
-    camera_model_loader_.startSubscribers();
-    return true;
-  } else {
-    return false;
+  else
+  {
+    ROS_INFO ("No valid frames have been passed into the cloud color self filter. Will not filter for robot parts.");
+//    no_filter_sub_ = nh_.subscribe<sensor_msgs::PointCloud2> ("cloud", 10, boost::bind(&ColorCloudFromImage::cloudCallback, this, _1));
   }
+
+  if (!camera_model_loader_.loadCamerasFromNamespace(pnh_)) {
+    ROS_ERROR_STREAM("Failed to load cameras from namespace '" << pnh_.getNamespace() << "'.");
+  }
+
+  // Load parameters
+  pnh_.param("lazy", lazy_, true);
+  enabled_ = !lazy_;
+
+  if (enabled_) {
+    startSubscribers();
+  }
+
+  ros::SubscriberStatusCallback connect_cb = boost::bind(&ColorCloudFromImage::connectCb, this);
+  cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("colored_cloud", 100, connect_cb, connect_cb);
+  cloud_debug_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("debug_cloud", 100);
 }
 
 void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr) {
+  if (!enabled_) {
+    return;
+  }
   pcl::PointCloud<pcl::PointXYZ> cloud_in;
   pcl::fromROSMsg(*cloud_ptr, cloud_in);
 
@@ -81,16 +86,15 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
       pcl::fromROSMsg(cloud_cam_frame, cloud);
 
       // Call self filter
-      bool use_self_filter = !filter_frames_.empty();
       std::vector<int> self_filter_mask;
-      if (use_self_filter){
+      if (use_self_filter_) {
         pcl::PointCloud<pcl::PointXYZ> cloud_filtered;
         self_filter_->updateWithSensorFrameAndMask(cloud, cloud_filtered, cam_frame_id,  self_filter_mask);
       }
 
       // Iterate over each point in cloud
       for (unsigned int i = 0; i < cloud.size(); i++) {
-        if (use_self_filter && (self_filter_mask[i] != robot_self_filter::OUTSIDE) )
+        if (use_self_filter_ && (self_filter_mask[i] != robot_self_filter::OUTSIDE))
           continue;
         Eigen::Vector3f point_cam(cloud[i].x, cloud[i].y, cloud[i].z);
         double new_dist;
@@ -125,6 +129,40 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
   pcl::toROSMsg(cloud_out, cloud_out_msg);
   cloud_out_msg.header = cloud_ptr->header;
   cloud_pub_.publish(cloud_out_msg);
+}
+
+void ColorCloudFromImage::connectCb()
+{
+  if (!lazy_) {
+    return;
+  }
+  if (cloud_pub_.getNumSubscribers() == 0) {
+    enabled_ = false;
+    stopSubscribers();
+  } else {
+    if (!enabled_) {
+      enabled_ = true;
+      startSubscribers();
+    }
+  }
+}
+
+void ColorCloudFromImage::startSubscribers()
+{
+  camera_model_loader_.startSubscribers();
+  sub_->subscribe(nh_, "cloud", 10);
+  if (!use_self_filter_) {
+    no_filter_sub_ = nh_.subscribe<sensor_msgs::PointCloud2> ("cloud", 10, boost::bind(&ColorCloudFromImage::cloudCallback, this, _1));
+  }
+}
+
+void ColorCloudFromImage::stopSubscribers()
+{
+  camera_model_loader_.shutdownSubscribers();
+  sub_->unsubscribe();
+  if (!use_self_filter_) {
+    no_filter_sub_.shutdown();
+  }
 }
 
 }
