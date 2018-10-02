@@ -46,21 +46,17 @@ bool ColorCloudFromImage::loadCamerasFromNamespace(ros::NodeHandle& nh) {
 }
 
 void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr) {
+  pcl::PointCloud<pcl::PointXYZ> cloud_in;
+  pcl::fromROSMsg(*cloud_ptr, cloud_in);
+
   pcl::PointCloud<pcl::PointXYZRGB> cloud_out;
-  pcl::fromROSMsg(*cloud_ptr, cloud_out); // complains about missing RGB field if pcl warnings are not disabled
-
-  // set default color for all pixels without color
-  for (unsigned int i = 0; i < cloud_out.size(); i++) {
-    cloud_out[i].r = 255;
-    cloud_out[i].g = 0;
-    cloud_out[i].b = 0;
-  }
-
-  std::vector<double> sqr_dist(cloud_out.size(), camera_model::INVALID);
+  std::vector<int> in_to_out_index(cloud_in.size(), -1);
+  std::vector<double> distance_from_center(cloud_in.size(), camera_model::INVALID);
+  // Iterate over every camera
   for (std::map<std::string, camera_model::Camera>::iterator c = camera_model_loader_.getCameraMap().begin(); c != camera_model_loader_.getCameraMap().end(); ++c) {
     camera_model::Camera& cam = c->second;
     if (cam.getLastImage()) {
-      // get transform to camera frame
+      // Get transform from cloud to camera frame
       geometry_msgs::TransformStamped transform;
       std::string cam_frame_id;
       if (cam.getFrameId() != "") {
@@ -68,54 +64,66 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
       } else {
         cam_frame_id = cam.getLastImage()->header.frame_id;
       }
-
       try {
         transform = tf_buffer_->lookupTransform(cam_frame_id, cloud_ptr->header.frame_id, cloud_ptr->header.stamp, ros::Duration(1));
       } catch (tf2::TransformException e) {
         ROS_WARN_STREAM("LookupTransform failed. Reason: " << e.what());
         continue;
       }
-      // transform cloud to cam frame
+
+      // Transform cloud to camera frame
       sensor_msgs::PointCloud2 cloud_cam_frame;
-      tf2::doTransform(*cloud_ptr, cloud_cam_frame, transform); // TODO transform points individually after checking if they already have a color
+      tf2::doTransform(*cloud_ptr, cloud_cam_frame, transform);
       cloud_cam_frame.header.frame_id = cam_frame_id;
-//      if (cam.getName() == "cam0") {
-//        cloud_debug_pub_.publish(cloud_cam_frame);
-//      }
-      // transform to pcl
+
+      // Convert to pcl
       pcl::PointCloud<pcl::PointXYZ> cloud;
       pcl::fromROSMsg(cloud_cam_frame, cloud);
 
+      // Call self filter
       bool use_self_filter = !filter_frames_.empty();
-
       std::vector<int> self_filter_mask;
-
       if (use_self_filter){
         pcl::PointCloud<pcl::PointXYZ> cloud_filtered;
         self_filter_->updateWithSensorFrameAndMask(cloud, cloud_filtered, cam_frame_id,  self_filter_mask);
       }
 
-      // iterate over each point in cloud
+      // Iterate over each point in cloud
       for (unsigned int i = 0; i < cloud.size(); i++) {
         if (use_self_filter && (self_filter_mask[i] != robot_self_filter::OUTSIDE) )
           continue;
-
         Eigen::Vector3f point_cam(cloud[i].x, cloud[i].y, cloud[i].z);
         double new_dist;
         camera_model::Color color = cam.worldToColor(point_cam.cast<double>(), new_dist);
-        if (new_dist < sqr_dist[i]) {
-          //ROS_INFO_STREAM("Found color! (" << color.r << ", " << color.g << ", " << color.b << ")");
-          cloud_out[i].r = color.r;
-          cloud_out[i].g = color.g;
-          cloud_out[i].b = color.b;
-          sqr_dist[i] = new_dist;
+        if (new_dist < distance_from_center[i]) {
+          // Distance to image center is lower, set/update color of point
+          // Find point in cloud out
+          int cloud_out_idx = in_to_out_index[i];
+          if (cloud_out_idx == -1) {
+            // Point not in cloud out yet
+            pcl::PointXYZRGB colored_point;
+            colored_point.x = cloud_in[i].x;
+            colored_point.y = cloud_in[i].y;
+            colored_point.z = cloud_in[i].z;
+            cloud_out.push_back(colored_point);
+            in_to_out_index[i] = static_cast<int>(cloud_out.size()-1);
+            cloud_out_idx = in_to_out_index[i];
+          }
+          // Update color
+          pcl::PointXYZRGB& colored_point = cloud_out[static_cast<size_t>(cloud_out_idx)];
+          colored_point.r = color.r;
+          colored_point.g = color.g;
+          colored_point.b = color.b;
+          distance_from_center[i] = new_dist;
         }
       }
     }
   }
 
+  // Convert back to sensor msg
   sensor_msgs::PointCloud2 cloud_out_msg;
   pcl::toROSMsg(cloud_out, cloud_out_msg);
+  cloud_out_msg.header = cloud_ptr->header;
   cloud_pub_.publish(cloud_out_msg);
 }
 

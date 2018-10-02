@@ -66,7 +66,7 @@ namespace color_cloud_from_image {
 
     std::vector<std::string> filter_frames_;
 
-    tf2_ros::MessageFilter<sensor_msgs::PointCloud2>           *mn_;
+    tf2_ros::MessageFilter<sensor_msgs::PointCloud2> *mn_;
     message_filters::Subscriber<sensor_msgs::PointCloud2> *sub_;
 
     ros::Subscriber no_filter_sub_;
