@@ -5,13 +5,11 @@
 namespace color_cloud_from_image {
 
 ColorCloudFromImage::ColorCloudFromImage(ros::NodeHandle& nh, ros::NodeHandle& pnh)
-  : nh_(nh){
+  : nh_(nh), pnh_(pnh){
   pcl::console::setVerbosityLevel(pcl::console::L_ERROR); // Disable warnings, so PC copying doesn't complain about missing RGB field
 
   tf_buffer_.reset(new tf2_ros::Buffer());
   tf_listener_.reset(new tf2_ros::TransformListener(*tf_buffer_));
-
-  pnh_ = ros::NodeHandle("~");
 
   self_filter_.reset(new filters::SelfFilter<pcl::PointCloud<pcl::PointXYZ> >(pnh_));
 
@@ -58,7 +56,7 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
     cloud_out[i].b = 0;
   }
 
-  std::vector<double> sqr_dist(cloud_ptr->height * cloud_ptr->width, camera_model::INVALID);
+  std::vector<double> sqr_dist(cloud_out.size(), camera_model::INVALID);
   for (std::map<std::string, camera_model::Camera>::iterator c = camera_model_loader_.getCameraMap().begin(); c != camera_model_loader_.getCameraMap().end(); ++c) {
     camera_model::Camera& cam = c->second;
     if (cam.getLastImage()) {
@@ -99,20 +97,18 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
 
       // iterate over each point in cloud
       for (unsigned int i = 0; i < cloud.size(); i++) {
-
         if (use_self_filter && (self_filter_mask[i] != robot_self_filter::OUTSIDE) )
           continue;
 
-        const pcl::PointXYZ& point = cloud[i];
-
-        Eigen::Vector3d point_cam(point.x, point.y, point.z);
+        Eigen::Vector3f point_cam(cloud[i].x, cloud[i].y, cloud[i].z);
         double new_dist;
-        camera_model::Color color = cam.worldToColor(point_cam, new_dist);
+        camera_model::Color color = cam.worldToColor(point_cam.cast<double>(), new_dist);
         if (new_dist < sqr_dist[i]) {
           //ROS_INFO_STREAM("Found color! (" << color.r << ", " << color.g << ", " << color.b << ")");
           cloud_out[i].r = color.r;
           cloud_out[i].g = color.g;
           cloud_out[i].b = color.b;
+          sqr_dist[i] = new_dist;
         }
       }
     }
