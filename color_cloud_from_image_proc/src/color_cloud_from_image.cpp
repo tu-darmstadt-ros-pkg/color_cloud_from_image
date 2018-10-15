@@ -58,8 +58,8 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
   std::vector<int> in_to_out_index(cloud_in.size(), -1);
   std::vector<double> distance_from_center(cloud_in.size(), camera_model::INVALID);
   // Iterate over every camera
-  for (std::map<std::string, camera_model::Camera>::iterator c = camera_model_loader_.getCameraMap().begin(); c != camera_model_loader_.getCameraMap().end(); ++c) {
-    camera_model::Camera& cam = c->second;
+  for (std::map<std::string, camera_model::Camera>::const_iterator c = camera_model_loader_.getCameraMap().begin(); c != camera_model_loader_.getCameraMap().end(); ++c) {
+    const camera_model::Camera& cam = c->second;
     if (cam.getLastImage()) {
       // Get transform from cloud to camera frame
       geometry_msgs::TransformStamped transform;
