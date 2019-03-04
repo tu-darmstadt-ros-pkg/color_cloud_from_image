@@ -16,6 +16,4 @@ class ColorCloudFromImageNodelet : public nodelet::Nodelet {
 };
 }
 
-PLUGINLIB_DECLARE_CLASS(color_cloud_from_image, ColorCloudFromImageNodelet,
-                        color_cloud_from_image::ColorCloudFromImageNodelet,
-                        nodelet::Nodelet);
+PLUGINLIB_EXPORT_CLASS(color_cloud_from_image::ColorCloudFromImageNodelet, nodelet::Nodelet);
