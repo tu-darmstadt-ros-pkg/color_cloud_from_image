@@ -59,13 +59,14 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
   // Iterate over every camera
   for (const kalibr_image_geometry::CameraPtr& cam: camera_loader_.cameras()) {
     if (cam->getLastImage()) {
+      cv_bridge::CvImageConstPtr cv_image = cam->getLastImageCv();
       // Get transform from cloud to camera frame
       geometry_msgs::TransformStamped transform;
       std::string cam_frame_id;
       if (cam->model().cameraInfo().frame_id != "") {
         cam_frame_id = cam->model().cameraInfo().frame_id;
       } else {
-        cam_frame_id = cam->getLastImage()->header.frame_id;
+        cam_frame_id = cv_image->header.frame_id;
       }
       try {
         transform = tf_buffer_->lookupTransform(cam_frame_id, cloud_ptr->header.frame_id, cloud_ptr->header.stamp, ros::Duration(1));
@@ -96,7 +97,7 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
           continue;
         Eigen::Vector3f point_cam(cloud[i].x, cloud[i].y, cloud[i].z);
         double new_dist;
-        kalibr_image_geometry::Color color = cam->model().worldToColor(point_cam.cast<double>(), cam->getLastImageCv()->image, new_dist);
+        kalibr_image_geometry::Color color = cam->model().worldToColor(point_cam.cast<double>(), cv_image->image, new_dist);
         if (new_dist < distance_from_center[i]) {
           // Distance to image center is lower, set/update color of point
           // Find point in cloud out
