@@ -29,12 +29,10 @@
 #include <tf2_ros/message_filter.h>
 #include <message_filters/subscriber.h>
 
-#include <camera_model_loader/camera_model_loader.h>
+#include <kalibr_camera_loader/camera_loader.h>
 
 
 namespace color_cloud_from_image {
-
-  using namespace aslam::cameras;
 
   class ColorCloudFromImage {
   public:
@@ -60,7 +58,7 @@ namespace color_cloud_from_image {
 
     sensor_msgs::PointCloud2 last_cloud_;
 
-    camera_model::CameraModelLoader camera_model_loader_;
+    kalibr_image_geometry::CameraLoader camera_loader_;
     boost::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     boost::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 

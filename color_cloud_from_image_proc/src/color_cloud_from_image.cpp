@@ -5,7 +5,7 @@
 namespace color_cloud_from_image {
 
 ColorCloudFromImage::ColorCloudFromImage(ros::NodeHandle& nh, ros::NodeHandle& pnh)
-  : nh_(nh), pnh_(pnh){
+  : nh_(nh), pnh_(pnh), camera_loader_(nh, pnh) {
   pcl::console::setVerbosityLevel(pcl::console::L_ERROR); // Disable warnings, so PC copying doesn't complain about missing RGB field
 
   tf_buffer_.reset(new tf2_ros::Buffer());
@@ -30,10 +30,6 @@ ColorCloudFromImage::ColorCloudFromImage(ros::NodeHandle& nh, ros::NodeHandle& p
 //    no_filter_sub_ = nh_.subscribe<sensor_msgs::PointCloud2> ("cloud", 10, boost::bind(&ColorCloudFromImage::cloudCallback, this, _1));
   }
 
-  if (!camera_model_loader_.loadCamerasFromNamespace(pnh_)) {
-    ROS_ERROR_STREAM("Failed to load cameras from namespace '" << pnh_.getNamespace() << "'.");
-  }
-
   // Load parameters
   pnh_.param("lazy", lazy_, true);
   enabled_ = !lazy_;
@@ -51,23 +47,25 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
   if (!enabled_) {
     return;
   }
+  if (!camera_loader_.cameraInfosReceived()) {
+    return;
+  }
   pcl::PointCloud<pcl::PointXYZ> cloud_in;
   pcl::fromROSMsg(*cloud_ptr, cloud_in);
 
   pcl::PointCloud<pcl::PointXYZRGB> cloud_out;
   std::vector<int> in_to_out_index(cloud_in.size(), -1);
-  std::vector<double> distance_from_center(cloud_in.size(), camera_model::INVALID);
+  std::vector<double> distance_from_center(cloud_in.size(), kalibr_image_geometry::INVALID);
   // Iterate over every camera
-  for (std::map<std::string, camera_model::Camera>::const_iterator c = camera_model_loader_.getCameraMap().begin(); c != camera_model_loader_.getCameraMap().end(); ++c) {
-    const camera_model::Camera& cam = c->second;
-    if (cam.getLastImage()) {
+  for (const kalibr_image_geometry::CameraPtr& cam: camera_loader_.cameras()) {
+    if (cam->getLastImage()) {
       // Get transform from cloud to camera frame
       geometry_msgs::TransformStamped transform;
       std::string cam_frame_id;
-      if (cam.getFrameId() != "") {
-        cam_frame_id = cam.getFrameId();
+      if (cam->model().cameraInfo().frame_id != "") {
+        cam_frame_id = cam->model().cameraInfo().frame_id;
       } else {
-        cam_frame_id = cam.getLastImage()->header.frame_id;
+        cam_frame_id = cam->getLastImage()->header.frame_id;
       }
       try {
         transform = tf_buffer_->lookupTransform(cam_frame_id, cloud_ptr->header.frame_id, cloud_ptr->header.stamp, ros::Duration(1));
@@ -98,7 +96,7 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
           continue;
         Eigen::Vector3f point_cam(cloud[i].x, cloud[i].y, cloud[i].z);
         double new_dist;
-        camera_model::Color color = cam.worldToColor(point_cam.cast<double>(), new_dist);
+        kalibr_image_geometry::Color color = cam->model().worldToColor(point_cam.cast<double>(), cam->getLastImageCv()->image, new_dist);
         if (new_dist < distance_from_center[i]) {
           // Distance to image center is lower, set/update color of point
           // Find point in cloud out
@@ -149,7 +147,7 @@ void ColorCloudFromImage::connectCb()
 
 void ColorCloudFromImage::startSubscribers()
 {
-  camera_model_loader_.startSubscribers();
+  camera_loader_.startImageSubscribers();
   sub_->subscribe(nh_, "cloud", 10);
   if (!use_self_filter_) {
     no_filter_sub_ = nh_.subscribe<sensor_msgs::PointCloud2> ("cloud", 10, boost::bind(&ColorCloudFromImage::cloudCallback, this, _1));
@@ -158,7 +156,7 @@ void ColorCloudFromImage::startSubscribers()
 
 void ColorCloudFromImage::stopSubscribers()
 {
-  camera_model_loader_.shutdownSubscribers();
+  camera_loader_.stopImageSubscribers();
   sub_->unsubscribe();
   if (!use_self_filter_) {
     no_filter_sub_.shutdown();

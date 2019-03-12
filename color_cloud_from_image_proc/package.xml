@@ -13,7 +13,7 @@
   <license>BSD</license>
 
   <buildtool_depend>catkin</buildtool_depend>
-  <depend>camera_model_loader</depend>
+  <depend>kalibr_camera_loader</depend>
   <depend>nodelet</depend>
   <depend>pcl_ros</depend>
   <depend>tf</depend>
