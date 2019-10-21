@@ -98,7 +98,12 @@ install(DIRECTORY include/${PROJECT_NAME}/
 
 # Mark other files for installation (e.g. launch and bag files, etc.)
 install(DIRECTORY
-    launch
-    config
-    DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+  launch
+  config
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+)
+
+install(FILES 
+  nodelet_plugins.xml
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
 )

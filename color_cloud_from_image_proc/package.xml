@@ -18,10 +18,11 @@
   <depend>pcl_ros</depend>
   <depend>tf</depend>
   <depend>tf_conversions</depend>
+  <depend>sm_property_tree</depend>
+
   <!--<depend>aslam_cameras</depend>
   <depend>aslam_time</depend>
   <depend>sm_boost</depend>
-  <depend>sm_property_tree</depend>
   <depend>sm_eigen</depend>
   <depend>sm_kinematics</depend>
   <depend>sm_opencv</depend>
