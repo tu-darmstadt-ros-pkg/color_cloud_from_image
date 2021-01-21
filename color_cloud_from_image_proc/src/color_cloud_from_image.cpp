@@ -5,7 +5,7 @@
 namespace color_cloud_from_image {
 
 ColorCloudFromImage::ColorCloudFromImage(ros::NodeHandle& nh, ros::NodeHandle& pnh)
-  : nh_(nh), pnh_(pnh), camera_loader_(nh, pnh) {
+  : nh_(nh), pnh_(pnh), lazy_(true), enabled_(false), camera_loader_(nh, pnh) {
   pcl::console::setVerbosityLevel(pcl::console::L_ERROR); // Disable warnings, so PC copying doesn't complain about missing RGB field
 
   tf_buffer_.reset(new tf2_ros::Buffer());
@@ -63,14 +63,14 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
       // Get transform from cloud to camera frame
       geometry_msgs::TransformStamped transform;
       std::string cam_frame_id;
-      if (cam->model().cameraInfo().frame_id != "") {
+      if (!cam->model().cameraInfo().frame_id.empty()) {
         cam_frame_id = cam->model().cameraInfo().frame_id;
       } else {
         cam_frame_id = cv_image->header.frame_id;
       }
       try {
         transform = tf_buffer_->lookupTransform(cam_frame_id, cloud_ptr->header.frame_id, cloud_ptr->header.stamp, ros::Duration(1));
-      } catch (tf2::TransformException e) {
+      } catch (const tf2::TransformException& e) {
         ROS_WARN_STREAM("LookupTransform failed. Reason: " << e.what());
         continue;
       }
