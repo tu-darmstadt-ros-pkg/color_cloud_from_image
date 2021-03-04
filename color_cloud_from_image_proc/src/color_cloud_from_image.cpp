@@ -124,9 +124,9 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
   }
 
   // Convert back to sensor msg
-  sensor_msgs::PointCloud2 cloud_out_msg;
-  pcl::toROSMsg(cloud_out, cloud_out_msg);
-  cloud_out_msg.header = cloud_ptr->header;
+  sensor_msgs::PointCloud2Ptr cloud_out_msg = boost::make_shared<sensor_msgs::PointCloud2>();
+  pcl::toROSMsg(cloud_out, *cloud_out_msg);
+  cloud_out_msg->header = cloud_ptr->header;
   cloud_pub_.publish(cloud_out_msg);
 }
 
