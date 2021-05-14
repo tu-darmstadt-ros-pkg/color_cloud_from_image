@@ -69,6 +69,7 @@ add_library(color_cloud_from_image_proc
   include/${PROJECT_NAME}/color_cloud_from_image.h
   src/color_cloud_from_image.cpp
   src/color_cloud_from_image_nodelet.cpp
+  src/timing.h
 )
 
 target_link_libraries(color_cloud_from_image_proc

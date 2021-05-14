@@ -1,6 +1,10 @@
 #include <color_cloud_from_image_proc/color_cloud_from_image.h>
+#include <chrono>
 
 #include <cv_bridge/cv_bridge.h>
+#include "timing.h"
+
+INIT_TIMING
 
 namespace color_cloud_from_image {
 
@@ -40,23 +44,28 @@ ColorCloudFromImage::ColorCloudFromImage(ros::NodeHandle& nh, ros::NodeHandle& p
 
   ros::SubscriberStatusCallback connect_cb = boost::bind(&ColorCloudFromImage::connectCb, this);
   cloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("colored_cloud", 100, connect_cb, connect_cb);
-  cloud_debug_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("debug_cloud", 100);
+//  cloud_debug_pub_ = nh_.advertise<sensor_msgs::PointCloud2>("debug_cloud", 100);
 }
 
 void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& cloud_ptr) {
+  START_TIMING("cloud callback");
+  auto start = std::chrono::high_resolution_clock::now();
   if (!enabled_) {
     return;
   }
   if (!camera_loader_.cameraInfosReceived()) {
     return;
   }
+  START_TIMING("CONVERSION");
   pcl::PointCloud<pcl::PointXYZ> cloud_in;
   pcl::fromROSMsg(*cloud_ptr, cloud_in);
+  STOP_TIMING_AVG;
 
   pcl::PointCloud<pcl::PointXYZRGB> cloud_out;
   std::vector<int> in_to_out_index(cloud_in.size(), -1);
   std::vector<double> distance_from_center(cloud_in.size(), kalibr_image_geometry::INVALID);
   // Iterate over every camera
+  START_TIMING("PROJECTION");
   for (const kalibr_image_geometry::CameraPtr& cam: camera_loader_.cameras()) {
     if (cam->getLastImage()) {
       cv_bridge::CvImageConstPtr cv_image = cam->getLastImageCv();
@@ -68,12 +77,15 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
       } else {
         cam_frame_id = cv_image->header.frame_id;
       }
+      START_TIMING("TF LOOKUP");
       try {
         transform = tf_buffer_->lookupTransform(cam_frame_id, cloud_ptr->header.frame_id, cloud_ptr->header.stamp, ros::Duration(1));
       } catch (const tf2::TransformException& e) {
         ROS_WARN_STREAM("LookupTransform failed. Reason: " << e.what());
+        STOP_TIMING_AVG;
         continue;
       }
+      STOP_TIMING_AVG;
 
       // Transform cloud to camera frame
       sensor_msgs::PointCloud2 cloud_cam_frame;
@@ -84,14 +96,17 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
       pcl::PointCloud<pcl::PointXYZ> cloud;
       pcl::fromROSMsg(cloud_cam_frame, cloud);
 
+      START_TIMING("SELF FILTER");
       // Call self filter
       std::vector<int> self_filter_mask;
       if (use_self_filter_) {
         pcl::PointCloud<pcl::PointXYZ> cloud_filtered;
         self_filter_->updateWithSensorFrameAndMask(cloud, cloud_filtered, cam_frame_id,  self_filter_mask);
       }
+      STOP_TIMING_AVG;
 
       // Iterate over each point in cloud
+      START_TIMING("point projection");
       for (unsigned int i = 0; i < cloud.size(); i++) {
         if (use_self_filter_ && (self_filter_mask[i] != robot_self_filter::OUTSIDE))
           continue;
@@ -120,14 +135,20 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
           distance_from_center[i] = new_dist;
         }
       }
+      STOP_TIMING_AVG;
     }
   }
+  STOP_TIMING_AVG;
 
   // Convert back to sensor msg
   sensor_msgs::PointCloud2Ptr cloud_out_msg = boost::make_shared<sensor_msgs::PointCloud2>();
   pcl::toROSMsg(cloud_out, *cloud_out_msg);
   cloud_out_msg->header = cloud_ptr->header;
   cloud_pub_.publish(cloud_out_msg);
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::milli> duration(end - start);
+  ROS_INFO_STREAM("Projection of cloud took " << duration.count() << " ms");
+  STOP_TIMING_AVG;
 }
 
 void ColorCloudFromImage::connectCb()
@@ -162,6 +183,10 @@ void ColorCloudFromImage::stopSubscribers()
   if (!use_self_filter_) {
     no_filter_sub_.shutdown();
   }
+}
+
+ColorCloudFromImage::~ColorCloudFromImage() {
+  timing::Timing::printTimeInfos();
 }
 
 }

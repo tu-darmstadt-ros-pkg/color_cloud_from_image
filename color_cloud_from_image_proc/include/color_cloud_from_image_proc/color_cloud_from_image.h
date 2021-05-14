@@ -37,6 +37,7 @@ namespace color_cloud_from_image {
   class ColorCloudFromImage {
   public:
     ColorCloudFromImage(ros::NodeHandle &nh, ros::NodeHandle &pnh);
+    ~ColorCloudFromImage();
   private:
     /* on new pc:
      * 1. iterate over each point
