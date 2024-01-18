@@ -8,6 +8,8 @@ ColorCloudFromImage::ColorCloudFromImage(ros::NodeHandle& nh, ros::NodeHandle& p
   : nh_(nh), pnh_(pnh), lazy_(true), enabled_(false), camera_loader_(nh, pnh) {
   pcl::console::setVerbosityLevel(pcl::console::L_ERROR); // Disable warnings, so PC copying doesn't complain about missing RGB field
 
+  ROS_INFO("color_cloud init");
+
   tf_buffer_.reset(new tf2_ros::Buffer());
   tf_listener_.reset(new tf2_ros::TransformListener(*tf_buffer_));
 
@@ -18,6 +20,7 @@ ColorCloudFromImage::ColorCloudFromImage(ros::NodeHandle& nh, ros::NodeHandle& p
 
   self_filter_->getSelfMask()->getLinkNames(filter_frames_);
   use_self_filter_ = !filter_frames_.empty();
+  use_self_filter_ = false;
   if (use_self_filter_)
   {
     ROS_INFO ("Valid frames were passed in. We'll filter them.");
@@ -54,6 +57,8 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
   pcl::fromROSMsg(*cloud_ptr, cloud_in);
 
   pcl::PointCloud<pcl::PointXYZRGB> cloud_out;
+  cloud_out.width = cloud_in.width;
+  cloud_out.height = cloud_in.height;
   std::vector<int> in_to_out_index(cloud_in.size(), -1);
   std::vector<double> distance_from_center(cloud_in.size(), kalibr_image_geometry::INVALID);
   // Iterate over every camera
@@ -98,7 +103,7 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
         Eigen::Vector3f point_cam(cloud[i].x, cloud[i].y, cloud[i].z);
         double new_dist;
         kalibr_image_geometry::Color color = cam->model().worldToColor(point_cam.cast<double>(), cv_image->image, new_dist);
-        if (new_dist < distance_from_center[i]) {
+        /*if (new_dist < distance_from_center[i])*/ {
           // Distance to image center is lower, set/update color of point
           // Find point in cloud out
           int cloud_out_idx = in_to_out_index[i];
@@ -117,7 +122,8 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
           colored_point.r = color.r;
           colored_point.g = color.g;
           colored_point.b = color.b;
-          distance_from_center[i] = new_dist;
+          if (new_dist < distance_from_center[i])
+            distance_from_center[i] = new_dist;
         }
       }
     }
@@ -127,6 +133,8 @@ void ColorCloudFromImage::cloudCallback(const sensor_msgs::PointCloud2ConstPtr& 
   sensor_msgs::PointCloud2Ptr cloud_out_msg = boost::make_shared<sensor_msgs::PointCloud2>();
   pcl::toROSMsg(cloud_out, *cloud_out_msg);
   cloud_out_msg->header = cloud_ptr->header;
+  cloud_out_msg->width = cloud_ptr->width;
+  cloud_out_msg->height = cloud_ptr->height;
   cloud_pub_.publish(cloud_out_msg);
 }
 
