@@ -1,29 +1,32 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.8)
 project(color_cloud_from_image_proc)
 
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# Default to C++17
+if (NOT CMAKE_CXX_STANDARD)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+endif ()
 
-## Find catkin macros and libraries
-## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
-## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS
-  kalibr_camera_loader
-  nodelet
+if (CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    add_compile_options(-Wall -Wextra -Wpedantic)
+endif ()
+
+find_package(ament_cmake REQUIRED)
+set(DEPENDENCIES
+  extended_camera_loader
+  
   pcl_ros
-  tf
-  tf_conversions
-  #aslam_cameras
-  #aslam_time
-  #sm_boost
-  #sm_property_tree
-  #sm_eigen
-  #sm_kinematics
-  #sm_opencv
-  #sm_logging
-  #geometry_msgs
-  robot_self_filter
+  tf2
+  tf2_ros
+  tf2_sensor_msgs
+  #eigen_conversions
+  #robot_self_filter
+  cv_bridge
+  message_filters
 )
+foreach(Dependency IN ITEMS ${DEPENDENCIES})
+    find_package(${Dependency} REQUIRED)
+endforeach()
 
 find_package(ASSIMP QUIET)
 if (NOT ASSIMP_FOUND)
@@ -52,46 +55,42 @@ endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++0x")
 
-catkin_package(
-  INCLUDE_DIRS include
-  LIBRARIES color_cloud_from_image_proc
-  CATKIN_DEPENDS kalibr_camera_loader nodelet pcl_ros tf tf_conversions
-#  DEPENDS system_lib
-)
-
-
-include_directories(
-  include
-  ${catkin_INCLUDE_DIRS}
-)
-
-add_library(color_cloud_from_image_proc
+add_library(${PROJECT_NAME} SHARED
   include/${PROJECT_NAME}/color_cloud_from_image.h
   src/color_cloud_from_image.cpp
-  src/color_cloud_from_image_nodelet.cpp
+  #src/color_cloud_from_image_node.cpp
 )
+target_include_directories(${PROJECT_NAME}
+  PUBLIC
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<INSTALL_INTERFACE:include>")
+ament_target_dependencies(${PROJECT_NAME} PUBLIC ${DEPENDENCIES})
 
-target_link_libraries(color_cloud_from_image_proc
-  ${catkin_LIBRARIES}
-)
-add_dependencies(color_cloud_from_image_proc ${catkin_EXPORTED_TARGETS})
+# target_link_libraries(color_cloud_from_image_proc
+#   ${catkin_LIBRARIES}
+# )
+# add_dependencies(color_cloud_from_image_proc ${catkin_EXPORTED_TARGETS})
 
-
-add_executable(color_cloud_from_image_node src/color_cloud_from_image_node.cpp)
-target_link_libraries(color_cloud_from_image_node
-  ${catkin_LIBRARIES}
+add_executable(${PROJECT_NAME}_standalone_node src/color_cloud_from_image_standalone_node.cpp)
+#ament_target_dependencies(${PROJECT_NAME}_standalone_node PUBLIC ${DEPENDENCIES})
+target_link_libraries(${PROJECT_NAME}_standalone_node
+  ${PROJECT_NAME}
 )
 
 # Mark executables and/or libraries for installation
-install(TARGETS color_cloud_from_image_node color_cloud_from_image_proc
-  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+ament_export_targets(export_${PROJECT_NAME}
+  HAS_LIBRARY_TARGET
+)
+install(TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_standalone_node 
+  EXPORT export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
 # Mark cpp header files for installation
 install(DIRECTORY include/${PROJECT_NAME}/
-  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+  DESTINATION include
   FILES_MATCHING PATTERN "*.h"
   PATTERN ".svn" EXCLUDE
 )
@@ -100,10 +99,7 @@ install(DIRECTORY include/${PROJECT_NAME}/
 install(DIRECTORY
   launch
   config
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+  DESTINATION share/${PROJECT_NAME}
 )
 
-install(FILES 
-  nodelet_plugins.xml
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-)
+ament_package()

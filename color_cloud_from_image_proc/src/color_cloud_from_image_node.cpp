@@ -1,14 +1,15 @@
-#include <nodelet/loader.h>
-#include <ros/ros.h>
+#include <color_cloud_from_image_proc/color_cloud_from_image.h>
 
-int main(int argc, char** argv) {
-  ros::init(argc, argv, "color_cloud_from_image_node");
-  nodelet::Loader nodelet;
-  nodelet::M_string remap(ros::names::getRemappings());
-  nodelet::V_string nargv;
-  std::string nodelet_name = ros::this_node::getName();
-  ROS_INFO_STREAM("Started " << nodelet_name << " nodelet.");
-  nodelet.load(nodelet_name, "color_cloud_from_image/ColorCloudFromImageNodelet", remap, nargv);
-  ros::spin();
-  return 0;
+namespace color_cloud_from_image {
+
+class ColorCloudFromImageNode {
+ public:
+  ColorCloudFromImageNode(const rclcpp::NodeOptions& options)
+    : Node("color_cloud_from_image_node", options) {
+    color_cloud_ = std::make_shared<ColorCloudFromImage>(this->shared_from_this());
+  }
+ private:
+  rclcpp::Node::SharedPtr node_;
+  boost::shared_ptr<ColorCloudFromImage> color_cloud_;
+};
 }
