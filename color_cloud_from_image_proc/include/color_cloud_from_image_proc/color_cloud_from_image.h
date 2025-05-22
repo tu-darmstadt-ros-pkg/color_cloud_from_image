@@ -55,7 +55,7 @@ namespace color_cloud_from_image {
      * 5. republish cloud
      */
     void cloudCallback(const std::shared_ptr<sensor_msgs::msg::PointCloud2 const> cloud_ptr);
-    void connectCb();
+    void connectCb(rclcpp::MatchedInfo& info);
 
     void startSubscribers();
     void stopSubscribers();

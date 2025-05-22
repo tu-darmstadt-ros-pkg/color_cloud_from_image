@@ -45,9 +45,11 @@ ColorCloudFromImage::ColorCloudFromImage(const rclcpp::NodeOptions& options)
   if (enabled_) {
     startSubscribers();
   }
-
-  auto connect_cb = std::bind(&ColorCloudFromImage::connectCb, this);
-  cloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("colored_cloud", 100);
+  rclcpp::PublisherEventCallbacks event_callbacks;
+  event_callbacks.matched_callback = std::bind(&ColorCloudFromImage::connectCb, this, std::placeholders::_1);
+  rclcpp::PublisherOptions pub_options;
+  pub_options.event_callbacks = event_callbacks;
+  cloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("colored_cloud", 100, pub_options);
   cloud_debug_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("debug_cloud", 100);
 }
 
@@ -141,12 +143,12 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
   cloud_pub_->publish(*cloud_out_msg);
 }
 
-void ColorCloudFromImage::connectCb()
+void ColorCloudFromImage::connectCb(rclcpp::MatchedInfo& info)
 {
   if (!lazy_) {
     return;
   }
-  if (cloud_pub_->get_subscription_count() == 0) {
+  if (info.current_count == 0 && enabled_) {
     enabled_ = false;
     stopSubscribers();
   } else {
