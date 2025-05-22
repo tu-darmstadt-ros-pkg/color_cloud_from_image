@@ -17,7 +17,6 @@
   <depend>extended_camera_loader</depend>
   <depend>message_filters</depend>
   <depend>pcl_ros</depend>
-  <depend>robot_self_filter</depend>
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_sensor_msgs</depend>

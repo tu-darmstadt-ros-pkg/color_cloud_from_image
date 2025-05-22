@@ -14,7 +14,6 @@ endif ()
 find_package(ament_cmake REQUIRED)
 set(DEPENDENCIES
   extended_camera_loader
-  
   pcl_ros
   tf2
   tf2_ros
