@@ -44,6 +44,8 @@ ColorCloudFromImage::ColorCloudFromImage(const rclcpp::NodeOptions& options)
 
   if (enabled_) {
     startSubscribers();
+  } else {
+    stopSubscribers();
   }
   rclcpp::PublisherEventCallbacks event_callbacks;
   event_callbacks.matched_callback = std::bind(&ColorCloudFromImage::connectCb, this, std::placeholders::_1);
