@@ -65,6 +65,9 @@ target_include_directories(${PROJECT_NAME}
   "$<INSTALL_INTERFACE:include>")
 ament_target_dependencies(${PROJECT_NAME} PUBLIC ${DEPENDENCIES})
 
+# composable node
+rclcpp_components_register_nodes(${PROJECT_NAME} PLUGIN "color_cloud_from_image::ColorCloudFromImage" EXECUTABLE color_cloud_from_image_component)
+
 # target_link_libraries(color_cloud_from_image_proc
 #   ${catkin_LIBRARIES}
 # )

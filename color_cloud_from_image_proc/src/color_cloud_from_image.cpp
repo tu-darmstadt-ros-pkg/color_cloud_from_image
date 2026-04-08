@@ -139,10 +139,10 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
   }
 
   // Convert back to sensor msg
-  sensor_msgs::msg::PointCloud2::SharedPtr cloud_out_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
+  sensor_msgs::msg::PointCloud2::UniquePtr cloud_out_msg = std::make_unique<sensor_msgs::msg::PointCloud2>();
   pcl::toROSMsg(cloud_out, *cloud_out_msg);
   cloud_out_msg->header = cloud_ptr->header;
-  cloud_pub_->publish(*cloud_out_msg);
+  cloud_pub_->publish(std::move(cloud_out_msg));
 }
 
 void ColorCloudFromImage::connectCb(rclcpp::MatchedInfo& info)
