@@ -59,9 +59,7 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
   if (!enabled_) {
     return;
   }
-  if (!camera_loader_.cameraInfosReceived()) {
-    return;
-  }
+
   pcl::PointCloud<pcl::PointXYZ> cloud_in;
   pcl::fromROSMsg(*cloud_ptr, cloud_in);
 
@@ -70,7 +68,7 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
   std::vector<double> distance_from_center(cloud_in.size(), extended_image_geometry::INVALID);
   // Iterate over every camera
   for (const extended_image_geometry::CameraPtr& cam: camera_loader_.cameras()) {
-    if (cam->getLastImage()) {
+    if (cam->getLastImage() && cam->cameraInfoReceived()) {
       cv_bridge::CvImageConstPtr cv_image = cam->getLastImageCv();
       // Get transform from cloud to camera frame
       geometry_msgs::msg::TransformStamped transform;
