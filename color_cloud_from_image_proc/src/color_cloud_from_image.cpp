@@ -40,6 +40,8 @@ ColorCloudFromImage::ColorCloudFromImage(const rclcpp::NodeOptions& options)
   // Load parameters
   node_->declare_parameter("lazy", true);
   node_->get_parameter("lazy", lazy_);
+  node_->declare_parameter("max_time_diff", 0.1);
+  node_->get_parameter("max_time_diff", max_time_diff_);
   enabled_ = !lazy_;
 
   if (enabled_) {
@@ -68,70 +70,82 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
   std::vector<double> distance_from_center(cloud_in.size(), extended_image_geometry::INVALID);
   // Iterate over every camera
   for (const extended_image_geometry::CameraPtr& cam: camera_loader_.cameras()) {
-    if (cam->getLastImage() && cam->cameraInfoReceived()) {
-      cv_bridge::CvImageConstPtr cv_image = cam->getLastImageCv();
-      // Get transform from cloud to camera frame
-      geometry_msgs::msg::TransformStamped transform;
-      std::string cam_frame_id;
-      if (!cam->model().cameraInfo()->frame_id.empty()) {
-        cam_frame_id = cam->model().cameraInfo()->frame_id;
-      } else {
-        cam_frame_id = cv_image->header.frame_id;
-      }
-      try {
-        transform = tf_buffer_->lookupTransform(cam_frame_id, cloud_ptr->header.frame_id, cloud_ptr->header.stamp, rclcpp::Duration(1, 0));
-      } catch (const tf2::TransformException& e) {
-        RCLCPP_WARN_STREAM(node_->get_logger(), "LookupTransform failed. Reason: " << e.what());
-        continue;
-      }
+    if (!cam->cameraInfoReceived()) {
+      RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 10000, "Camera info not received for camera: " << cam->getName());
+      continue;
+    }
+    if (!cam->getLastImage()) {
+      RCLCPP_INFO_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 10000, "No image received for camera: " << cam->getName());
+      continue;
+    }
+    rclcpp::Time cloud_time = cloud_ptr->header.stamp;
+    rclcpp::Time image_time = cam->getLastStamp();
+    if (std::abs((cloud_time - image_time).seconds()) > max_time_diff_) {
+      RCLCPP_DEBUG_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 1000, "Time difference too large for camera: " << cam->getName() << ". Cloud time to image time difference: " << (cloud_time - image_time).seconds());
+      continue;
+    }
+    cv_bridge::CvImageConstPtr cv_image = cam->getLastImageCv();
+    // Get transform from cloud to camera frame
+    geometry_msgs::msg::TransformStamped transform;
+    std::string cam_frame_id;
+    if (!cam->model().cameraInfo()->frame_id.empty()) {
+      cam_frame_id = cam->model().cameraInfo()->frame_id;
+    } else {
+      cam_frame_id = cv_image->header.frame_id;
+    }
+    try {
+      transform = tf_buffer_->lookupTransform(cam_frame_id, cloud_ptr->header.frame_id, cloud_ptr->header.stamp, rclcpp::Duration(1, 0));
+    } catch (const tf2::TransformException& e) {
+      RCLCPP_WARN_STREAM(node_->get_logger(), "LookupTransform failed. Reason: " << e.what());
+      continue;
+    }
 
-      // Transform cloud to camera frame
-      sensor_msgs::msg::PointCloud2 cloud_cam_frame;
-      tf2::doTransform(*cloud_ptr, cloud_cam_frame, transform);
-      cloud_cam_frame.header.frame_id = cam_frame_id;
+    // Transform cloud to camera frame
+    sensor_msgs::msg::PointCloud2 cloud_cam_frame;
+    tf2::doTransform(*cloud_ptr, cloud_cam_frame, transform);
+    cloud_cam_frame.header.frame_id = cam_frame_id;
 
-      // Convert to pcl
-      pcl::PointCloud<pcl::PointXYZ> cloud;
-      pcl::fromROSMsg(cloud_cam_frame, cloud);
+    // Convert to pcl
+    pcl::PointCloud<pcl::PointXYZ> cloud;
+    pcl::fromROSMsg(cloud_cam_frame, cloud);
 
-      // Call self filter
-      std::vector<int> self_filter_mask;
+    // Call self filter
+    std::vector<int> self_filter_mask;
 
-      // TODO add new self filter
-      /*if (use_self_filter_) {
-        pcl::PointCloud<pcl::PointXYZ> cloud_filtered;
-        self_filter_->updateWithSensorFrameAndMask(cloud, cloud_filtered, cam_frame_id,  self_filter_mask);
-      }*/
+    // TODO add new self filter
+    /*if (use_self_filter_) {
+      pcl::PointCloud<pcl::PointXYZ> cloud_filtered;
+      self_filter_->updateWithSensorFrameAndMask(cloud, cloud_filtered, cam_frame_id,  self_filter_mask);
+    }*/
 
-      // Iterate over each point in cloud
-      for (unsigned int i = 0; i < cloud.size(); i++) {
-        // TODO port self filter
-        /*if (use_self_filter_ && (self_filter_mask[i] != robot_self_filter::OUTSIDE))
-          continue;*/
-        Eigen::Vector3f point_cam(cloud[i].x, cloud[i].y, cloud[i].z);
-        double new_dist;
-        extended_image_geometry::Color color = cam->model().worldToColor(point_cam.cast<double>(), cv_image->image, new_dist);
-        if (new_dist < distance_from_center[i]) {
-          // Distance to image center is lower, set/update color of point
-          // Find point in cloud out
-          int cloud_out_idx = in_to_out_index[i];
-          if (cloud_out_idx == -1) {
-            // Point not in cloud out yet
-            pcl::PointXYZRGB colored_point;
-            colored_point.x = cloud_in[i].x;
-            colored_point.y = cloud_in[i].y;
-            colored_point.z = cloud_in[i].z;
-            cloud_out.push_back(colored_point);
-            in_to_out_index[i] = static_cast<int>(cloud_out.size()-1);
-            cloud_out_idx = in_to_out_index[i];
-          }
-          // Update color
-          pcl::PointXYZRGB& colored_point = cloud_out[static_cast<size_t>(cloud_out_idx)];
-          colored_point.r = color.r;
-          colored_point.g = color.g;
-          colored_point.b = color.b;
-          distance_from_center[i] = new_dist;
+    // Iterate over each point in cloud
+    for (unsigned int i = 0; i < cloud.size(); i++) {
+      // TODO port self filter
+      /*if (use_self_filter_ && (self_filter_mask[i] != robot_self_filter::OUTSIDE))
+        continue;*/
+      Eigen::Vector3f point_cam(cloud[i].x, cloud[i].y, cloud[i].z);
+      double new_dist;
+      extended_image_geometry::Color color = cam->model().worldToColor(point_cam.cast<double>(), cv_image->image, new_dist);
+      if (new_dist < distance_from_center[i]) {
+        // Distance to image center is lower, set/update color of point
+        // Find point in cloud out
+        int cloud_out_idx = in_to_out_index[i];
+        if (cloud_out_idx == -1) {
+          // Point not in cloud out yet
+          pcl::PointXYZRGB colored_point;
+          colored_point.x = cloud_in[i].x;
+          colored_point.y = cloud_in[i].y;
+          colored_point.z = cloud_in[i].z;
+          cloud_out.push_back(colored_point);
+          in_to_out_index[i] = static_cast<int>(cloud_out.size()-1);
+          cloud_out_idx = in_to_out_index[i];
         }
+        // Update color
+        pcl::PointXYZRGB& colored_point = cloud_out[static_cast<size_t>(cloud_out_idx)];
+        colored_point.r = color.r;
+        colored_point.g = color.g;
+        colored_point.b = color.b;
+        distance_from_center[i] = new_dist;
       }
     }
   }

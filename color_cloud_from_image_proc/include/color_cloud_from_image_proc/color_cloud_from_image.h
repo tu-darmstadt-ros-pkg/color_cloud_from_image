@@ -85,6 +85,8 @@ namespace color_cloud_from_image {
 
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr no_filter_sub_;
 
+    double max_time_diff_;
+
   };
 }
 
