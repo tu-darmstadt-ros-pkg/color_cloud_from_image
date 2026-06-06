@@ -14,7 +14,7 @@ ColorCloudFromImage::ColorCloudFromImage(const rclcpp::NodeOptions& options)
     node_->get_node_timers_interface());
   tf_buffer_->setCreateTimerInterface(timer_interface);
 
-  tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+  tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_, node_);
 
   //self_filter_ = std::make_shared<filters::SelfFilter<pcl::PointCloud<pcl::PointXYZ>>(node);
 
