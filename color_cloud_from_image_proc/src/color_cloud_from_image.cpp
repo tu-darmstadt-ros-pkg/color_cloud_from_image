@@ -85,6 +85,10 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
       continue;
     }
     cv_bridge::CvImageConstPtr cv_image = cam->getLastImageCv();
+    if (!cv_image) {
+      RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 10000, "Image conversion failed for camera: " << cam->getName());
+      continue;
+    }
     // Get transform from cloud to camera frame
     geometry_msgs::msg::TransformStamped transform;
     std::string cam_frame_id;
