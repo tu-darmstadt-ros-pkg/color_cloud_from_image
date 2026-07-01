@@ -66,7 +66,6 @@ ColorCloudFromImage::ColorCloudFromImage(const rclcpp::NodeOptions& options)
   rclcpp::PublisherOptions pub_options;
   pub_options.event_callbacks = event_callbacks;
   cloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("colored_cloud", 100, pub_options);
-  cloud_debug_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("debug_cloud", 100);
 }
 
 template<typename PointType>
