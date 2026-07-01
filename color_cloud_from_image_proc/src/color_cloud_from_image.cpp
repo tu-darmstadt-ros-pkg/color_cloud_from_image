@@ -22,6 +22,22 @@ ColorCloudFromImage::ColorCloudFromImage(const rclcpp::NodeOptions& options)
   //sub_->registerCallback(std::bind(&ColorCloudFromImage::cloudCallback, this, std::placeholders::_1));
   mn_ = new tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2> (*sub_, *tf_buffer_, "", 30, node_);
 
+  // Load parameters
+  node_->declare_parameter("lazy", true);
+  node_->get_parameter("lazy", lazy_);
+  node_->declare_parameter("max_time_diff", 0.1);
+  node_->get_parameter("max_time_diff", max_time_diff_);
+  enabled_ = !lazy_;
+  node_->declare_parameter("mono", false);
+  node_->get_parameter("mono", mono_);
+
+  std::function<void(sensor_msgs::msg::PointCloud2::ConstSharedPtr)> cloud_callback;
+  if (mono_) {
+    cloud_callback = std::bind(&ColorCloudFromImage::cloudCallback<pcl::PointXYZI>, this, std::placeholders::_1);
+  } else {
+    cloud_callback = std::bind(&ColorCloudFromImage::cloudCallback<pcl::PointXYZRGB>, this, std::placeholders::_1);
+  }
+
   // TODO add self filter
   //self_filter_->getSelfMask()->getLinkNames(filter_frames_);
   use_self_filter_ = !filter_frames_.empty();
@@ -29,20 +45,16 @@ ColorCloudFromImage::ColorCloudFromImage(const rclcpp::NodeOptions& options)
   {
     RCLCPP_INFO (node_->get_logger(), "Valid frames were passed in. We'll filter them.");
     mn_->setTargetFrames (filter_frames_);
-    mn_->registerCallback (std::bind (&ColorCloudFromImage::cloudCallback, this, std::placeholders::_1));
+
+    mn_->registerCallback (cloud_callback);
   }
   else
   {
     RCLCPP_INFO (node_->get_logger(), "No valid frames have been passed into the cloud color self filter. Will not filter for robot parts.");
-    no_filter_sub_ = node_->create_subscription<sensor_msgs::msg::PointCloud2> ("cloud", 10, std::bind(&ColorCloudFromImage::cloudCallback, this, std::placeholders::_1));
+    no_filter_sub_ = node_->create_subscription<sensor_msgs::msg::PointCloud2> ("cloud", 10, cloud_callback);
   }
 
-  // Load parameters
-  node_->declare_parameter("lazy", true);
-  node_->get_parameter("lazy", lazy_);
-  node_->declare_parameter("max_time_diff", 0.1);
-  node_->get_parameter("max_time_diff", max_time_diff_);
-  enabled_ = !lazy_;
+  
 
   if (enabled_) {
     startSubscribers();
@@ -57,6 +69,7 @@ ColorCloudFromImage::ColorCloudFromImage(const rclcpp::NodeOptions& options)
   cloud_debug_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("debug_cloud", 100);
 }
 
+template<typename PointType>
 void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::PointCloud2 const> cloud_ptr) {
   if (!enabled_) {
     return;
@@ -65,7 +78,7 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
   pcl::PointCloud<pcl::PointXYZ> cloud_in;
   pcl::fromROSMsg(*cloud_ptr, cloud_in);
 
-  pcl::PointCloud<pcl::PointXYZRGB> cloud_out;
+  pcl::PointCloud<PointType> cloud_out;
   std::vector<int> in_to_out_index(cloud_in.size(), -1);
   std::vector<double> distance_from_center(cloud_in.size(), extended_image_geometry::INVALID);
   // Iterate over every camera
@@ -84,7 +97,13 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
       RCLCPP_DEBUG_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 1000, "Time difference too large for camera: " << cam->getName() << ". Cloud time to image time difference: " << (cloud_time - image_time).seconds());
       continue;
     }
-    cv_bridge::CvImageConstPtr cv_image = cam->getLastImageCv();
+    
+    cv_bridge::CvImageConstPtr cv_image;
+    if (mono_) {
+      cv_image = cam->getLastImageCvMono();
+    } else {
+      cv_image = cam->getLastImageCv();
+    }
     if (!cv_image) {
       RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 10000, "Image conversion failed for camera: " << cam->getName());
       continue;
@@ -129,14 +148,14 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
         continue;*/
       Eigen::Vector3f point_cam(cloud[i].x, cloud[i].y, cloud[i].z);
       double new_dist;
-      extended_image_geometry::Color color = cam->model().worldToColor(point_cam.cast<double>(), cv_image->image, new_dist);
+      
       if (new_dist < distance_from_center[i]) {
         // Distance to image center is lower, set/update color of point
         // Find point in cloud out
         int cloud_out_idx = in_to_out_index[i];
         if (cloud_out_idx == -1) {
           // Point not in cloud out yet
-          pcl::PointXYZRGB colored_point;
+          PointType colored_point;
           colored_point.x = cloud_in[i].x;
           colored_point.y = cloud_in[i].y;
           colored_point.z = cloud_in[i].z;
@@ -145,10 +164,8 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
           cloud_out_idx = in_to_out_index[i];
         }
         // Update color
-        pcl::PointXYZRGB& colored_point = cloud_out[static_cast<size_t>(cloud_out_idx)];
-        colored_point.r = color.r;
-        colored_point.g = color.g;
-        colored_point.b = color.b;
+        PointType& colored_point = cloud_out[static_cast<size_t>(cloud_out_idx)];
+        color_point(colored_point, cam, point_cam, cv_image, new_dist);
         distance_from_center[i] = new_dist;
       }
     }
@@ -160,6 +177,21 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
   cloud_out_msg->header = cloud_ptr->header;
   cloud_pub_->publish(std::move(cloud_out_msg));
 }
+
+template<>
+void ColorCloudFromImage::color_point<pcl::PointXYZRGB>(pcl::PointXYZRGB& point, const extended_image_geometry::CameraPtr& cam, const Eigen::Vector3f& point_cam, const cv_bridge::CvImageConstPtr& cv_image, double& new_dist) {
+  extended_image_geometry::Color color = cam->model().worldToColor<extended_image_geometry::Color>(point_cam.cast<double>(), cv_image->image, new_dist);
+  point.r = color.r;
+  point.g = color.g;
+  point.b = color.b;
+}
+
+template<>
+void ColorCloudFromImage::color_point<pcl::PointXYZI>(pcl::PointXYZI& point, const extended_image_geometry::CameraPtr& cam, const Eigen::Vector3f& point_cam, const cv_bridge::CvImageConstPtr& cv_image, double& new_dist) {
+  float mono = cam->model().worldToColor<float>(point_cam.cast<double>(), cv_image->image, new_dist);
+  point.intensity = mono;
+}
+
 
 void ColorCloudFromImage::connectCb(rclcpp::MatchedInfo& info)
 {
@@ -182,8 +214,16 @@ void ColorCloudFromImage::startSubscribers()
   camera_loader_.startImageSubscribers();
   //sub_->subscribe(node_, "cloud", rclcpp::QoS(10));
   sub_->subscribe();
+
+  std::function<void(sensor_msgs::msg::PointCloud2::ConstSharedPtr)> cloud_callback;
+  if (mono_) {
+    cloud_callback = std::bind(&ColorCloudFromImage::cloudCallback<pcl::PointXYZI>, this, std::placeholders::_1);
+  } else {
+    cloud_callback = std::bind(&ColorCloudFromImage::cloudCallback<pcl::PointXYZRGB>, this, std::placeholders::_1);
+  }
+
   if (!use_self_filter_) {
-    no_filter_sub_ = node_->create_subscription<sensor_msgs::msg::PointCloud2> ("cloud", 10, std::bind(&ColorCloudFromImage::cloudCallback, this, std::placeholders::_1));
+    no_filter_sub_ = node_->create_subscription<sensor_msgs::msg::PointCloud2> ("cloud", 10, cloud_callback);
   }
 }
 

@@ -54,7 +54,12 @@ namespace color_cloud_from_image {
      * 4. save pixel color for point
      * 5. republish cloud
      */
+    template<typename PointType>
     void cloudCallback(const std::shared_ptr<sensor_msgs::msg::PointCloud2 const> cloud_ptr);
+
+    template<typename PointType>
+    void color_point(PointType& point, const extended_image_geometry::CameraPtr& cam, const Eigen::Vector3f& point_cam, const cv_bridge::CvImageConstPtr& cv_image, double& new_dist);
+
     void connectCb(rclcpp::MatchedInfo& info);
 
     void startSubscribers();
@@ -64,6 +69,8 @@ namespace color_cloud_from_image {
 
     bool lazy_;
     bool enabled_;
+
+    bool mono_;
 
     sensor_msgs::msg::PointCloud2::SharedPtr last_cloud_;
 
