@@ -57,8 +57,13 @@ namespace color_cloud_from_image {
     template<typename PointType>
     void cloudCallback(const std::shared_ptr<sensor_msgs::msg::PointCloud2 const> cloud_ptr);
 
-    template<typename PointType>
-    void color_point(PointType& point, const extended_image_geometry::CameraPtr& cam, const Eigen::Vector3f& point_cam, const cv_bridge::CvImageConstPtr& cv_image, double& new_dist);
+    template<typename PointType, typename ColorType>
+    void processCamera(const extended_image_geometry::CameraPtr& cam, const cv_bridge::CvImageConstPtr& cv_image, const pcl::PointCloud<pcl::PointXYZ>& cloud_in, const pcl::PointCloud<pcl::PointXYZ>& cloud, pcl::PointCloud<PointType>& cloud_out, std::vector<int>& in_to_out_index, std::vector<double>& distance_from_center);
+    /*template<typename PointType, typename ImageType>
+    void color_point(PointType& point, const extended_image_geometry::CameraPtr& cam, const Eigen::Vector3f& point_cam, const cv_bridge::CvImageConstPtr& cv_image, double& new_dist);*/
+
+    template<typename PointType, typename ColorType>
+    void update_point_color(PointType& point_to_update, const ColorType& color);
 
     void connectCb(rclcpp::MatchedInfo& info);
 

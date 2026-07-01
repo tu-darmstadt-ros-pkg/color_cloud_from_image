@@ -131,43 +131,16 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
     pcl::PointCloud<pcl::PointXYZ> cloud;
     pcl::fromROSMsg(cloud_cam_frame, cloud);
 
-    // Call self filter
-    std::vector<int> self_filter_mask;
-
-    // TODO add new self filter
-    /*if (use_self_filter_) {
-      pcl::PointCloud<pcl::PointXYZ> cloud_filtered;
-      self_filter_->updateWithSensorFrameAndMask(cloud, cloud_filtered, cam_frame_id,  self_filter_mask);
-    }*/
-
-    // Iterate over each point in cloud
-    for (unsigned int i = 0; i < cloud.size(); i++) {
-      // TODO port self filter
-      /*if (use_self_filter_ && (self_filter_mask[i] != robot_self_filter::OUTSIDE))
-        continue;*/
-      Eigen::Vector3f point_cam(cloud[i].x, cloud[i].y, cloud[i].z);
-      double new_dist;
-      
-      if (new_dist < distance_from_center[i]) {
-        // Distance to image center is lower, set/update color of point
-        // Find point in cloud out
-        int cloud_out_idx = in_to_out_index[i];
-        if (cloud_out_idx == -1) {
-          // Point not in cloud out yet
-          PointType colored_point;
-          colored_point.x = cloud_in[i].x;
-          colored_point.y = cloud_in[i].y;
-          colored_point.z = cloud_in[i].z;
-          cloud_out.push_back(colored_point);
-          in_to_out_index[i] = static_cast<int>(cloud_out.size()-1);
-          cloud_out_idx = in_to_out_index[i];
-        }
-        // Update color
-        PointType& colored_point = cloud_out[static_cast<size_t>(cloud_out_idx)];
-        color_point(colored_point, cam, point_cam, cv_image, new_dist);
-        distance_from_center[i] = new_dist;
+    if (mono_) {
+      if (cv_image->image.type() == CV_16UC1) {
+        processCamera<PointType, uint16_t>(cam, cv_image, cloud_in, cloud, cloud_out, in_to_out_index, distance_from_center);
+      } else {
+        processCamera<PointType, float>(cam, cv_image, cloud_in, cloud,cloud_out, in_to_out_index, distance_from_center);
       }
+    } else {
+      processCamera<PointType, extended_image_geometry::Color>(cam, cv_image, cloud_in, cloud, cloud_out, in_to_out_index, distance_from_center);
     }
+
   }
 
   // Convert back to sensor msg
@@ -177,6 +150,38 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
   cloud_pub_->publish(std::move(cloud_out_msg));
 }
 
+template<typename PointType, typename ColorType>
+void ColorCloudFromImage::processCamera(const extended_image_geometry::CameraPtr& cam, const cv_bridge::CvImageConstPtr& cv_image, const pcl::PointCloud<pcl::PointXYZ>& cloud_in, const pcl::PointCloud<pcl::PointXYZ>& cloud, pcl::PointCloud<PointType>& cloud_out, std::vector<int>& in_to_out_index, std::vector<double>& distance_from_center) {
+
+  for (unsigned int i = 0; i < cloud_in.size(); ++i) {
+    Eigen::Vector3f point_cam(cloud[i].x, cloud[i].y, cloud[i].z);
+    double new_dist;
+
+    ColorType color = cam->model().worldToColor<ColorType>(point_cam.cast<double>(), cv_image->image, new_dist);
+
+    if (new_dist < distance_from_center[i]) {
+      // Distance to image center is lower, set/update color of point
+      // Find point in cloud out
+      int cloud_out_idx = in_to_out_index[i];
+      if (cloud_out_idx == -1) {
+        // Point not in cloud out yet
+        PointType colored_point;
+        colored_point.x = cloud_in[i].x;
+        colored_point.y = cloud_in[i].y;
+        colored_point.z = cloud_in[i].z;
+        cloud_out.push_back(colored_point);
+        in_to_out_index[i] = static_cast<int>(cloud_out.size()-1);
+        cloud_out_idx = in_to_out_index[i];
+      }
+      // Update color
+      PointType& colored_point = cloud_out[static_cast<size_t>(cloud_out_idx)];
+      update_point_color<PointType, ColorType>(colored_point, color);
+      distance_from_center[i] = new_dist;
+    }
+  }
+}
+
+/*
 template<>
 void ColorCloudFromImage::color_point<pcl::PointXYZRGB>(pcl::PointXYZRGB& point, const extended_image_geometry::CameraPtr& cam, const Eigen::Vector3f& point_cam, const cv_bridge::CvImageConstPtr& cv_image, double& new_dist) {
   extended_image_geometry::Color color = cam->model().worldToColor<extended_image_geometry::Color>(point_cam.cast<double>(), cv_image->image, new_dist);
@@ -186,9 +191,41 @@ void ColorCloudFromImage::color_point<pcl::PointXYZRGB>(pcl::PointXYZRGB& point,
 }
 
 template<>
-void ColorCloudFromImage::color_point<pcl::PointXYZI>(pcl::PointXYZI& point, const extended_image_geometry::CameraPtr& cam, const Eigen::Vector3f& point_cam, const cv_bridge::CvImageConstPtr& cv_image, double& new_dist) {
+void ColorCloudFromImage::color_point<pcl::PointXYZI, float>(pcl::PointXYZI& point, const extended_image_geometry::CameraPtr& cam, const Eigen::Vector3f& point_cam, const cv_bridge::CvImageConstPtr& cv_image, double& new_dist) {
+
   float mono = cam->model().worldToColor<float>(point_cam.cast<double>(), cv_image->image, new_dist);
   point.intensity = mono;
+}
+
+
+template void ColorCloudFromImage::color_point<pcl::PointXYZI, uint16_t>(pcl::PointXYZI& point, const extended_image_geometry::CameraPtr& cam, const Eigen::Vector3f& point_cam, const cv_bridge::CvImageConstPtr& cv_image, double& new_dist) {
+  // TODO scale?
+  float mono = cam->model().worldToColor<uint16_t>(point_cam.cast<double>(), cv_image->image, new_dist);
+  point.intensity = mono;
+}*/
+
+template<>
+void ColorCloudFromImage::update_point_color<pcl::PointXYZRGB, extended_image_geometry::Color>(pcl::PointXYZRGB& point_to_update, const extended_image_geometry::Color& ref_point) {
+  point_to_update.r = ref_point.r;
+  point_to_update.g = ref_point.g;
+  point_to_update.b = ref_point.b;
+}
+
+template<>
+void ColorCloudFromImage::update_point_color<pcl::PointXYZI, float>(pcl::PointXYZI& point_to_update, const float& ref_point) {
+  point_to_update.intensity = ref_point;
+}
+
+template<>
+void ColorCloudFromImage::update_point_color<pcl::PointXYZI, uint16_t>(pcl::PointXYZI& point_to_update, const uint16_t& ref_point) {
+  // TODO scale?
+  point_to_update.intensity = ref_point;
+}
+
+template<typename PointType, typename ColorType>
+void ColorCloudFromImage::update_point_color(PointType& point_to_update, const ColorType& ref_point) {
+  // Do nothing, no color to update
+  RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 10000, "No specialization for update_point_color for point type: " << typeid(PointType).name() << " and color type: " << typeid(ColorType).name());
 }
 
 
