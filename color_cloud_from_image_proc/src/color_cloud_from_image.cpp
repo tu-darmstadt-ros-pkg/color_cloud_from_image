@@ -65,7 +65,7 @@ ColorCloudFromImage::ColorCloudFromImage(const rclcpp::NodeOptions& options)
   event_callbacks.matched_callback = std::bind(&ColorCloudFromImage::connectCb, this, std::placeholders::_1);
   rclcpp::PublisherOptions pub_options;
   pub_options.event_callbacks = event_callbacks;
-  cloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("colored_cloud", 100, pub_options);
+  cloud_pub_ = node_->create_publisher<sensor_msgs::msg::PointCloud2>("colored_cloud", 5, pub_options);
 }
 
 template<typename PointType>
