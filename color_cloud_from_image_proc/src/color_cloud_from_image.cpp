@@ -27,9 +27,17 @@ ColorCloudFromImage::ColorCloudFromImage(const rclcpp::NodeOptions& options)
   node_->get_parameter("lazy", lazy_);
   node_->declare_parameter("max_time_diff", 0.1);
   node_->get_parameter("max_time_diff", max_time_diff_);
+
+  // TODO add plugin loading to do this
+  node_->declare_parameter("do_mono_scaling", false);
+  node_->declare_parameter("mono_scale", 1.0);
+  node_->declare_parameter("mono_offset", 0.0);
   enabled_ = !lazy_;
   node_->declare_parameter("mono", false);
   node_->get_parameter("mono", mono_);
+  node_->get_parameter("do_mono_scaling", mono_scaling_);
+  node_->get_parameter("mono_scale", mono_scale_); // 0.01 and -273.15 for centi kelvin to celsius
+  node_->get_parameter("mono_offset", mono_offset_);
 
   std::function<void(sensor_msgs::msg::PointCloud2::ConstSharedPtr)> cloud_callback;
   if (mono_) {
@@ -96,17 +104,30 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
       RCLCPP_DEBUG_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 1000, "Time difference too large for camera: " << cam->getName() << ". Cloud time to image time difference: " << (cloud_time - image_time).seconds());
       continue;
     }
-    
+
     cv_bridge::CvImageConstPtr cv_image;
     if (mono_) {
       cv_image = cam->getLastImageCvMono();
     } else {
       cv_image = cam->getLastImageCv();
     }
+
     if (!cv_image) {
       RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 10000, "Image conversion failed for camera: " << cam->getName());
       continue;
     }
+
+    if (mono_scaling_ && mono_) {
+      if (cv_image->image.type() != CV_32FC1){
+          cv_bridge::CvImagePtr image_ptr(new cv_bridge::CvImage(*cv_image));
+          cv::Mat float_img;
+          image_ptr->image.convertTo(float_img, CV_32FC1);
+          image_ptr->image = float_img;
+          cv_image = image_ptr;
+      }
+      cv_image->image.convertTo(cv_image->image, cv_image->image.type(), mono_scale_, mono_offset_);
+    }
+
     // Get transform from cloud to camera frame
     geometry_msgs::msg::TransformStamped transform;
     std::string cam_frame_id;

@@ -99,6 +99,10 @@ namespace color_cloud_from_image {
 
     double max_time_diff_;
 
+    bool mono_scaling_;
+    double mono_scale_;
+    double mono_offset_;
+
   };
 }
 
