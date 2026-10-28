@@ -2,6 +2,8 @@
 
 #include <cv_bridge/cv_bridge.hpp>
 
+#include <algorithm>
+
 namespace color_cloud_from_image {
 
 ColorCloudFromImage::ColorCloudFromImage(const rclcpp::NodeOptions& options)
@@ -18,7 +20,7 @@ ColorCloudFromImage::ColorCloudFromImage(const rclcpp::NodeOptions& options)
 
   //self_filter_ = std::make_shared<filters::SelfFilter<pcl::PointCloud<pcl::PointXYZ>>(node);
 
-  sub_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(node_, "cloud");//, 10);
+  sub_ = std::make_shared<message_filters::Subscriber<sensor_msgs::msg::PointCloud2>>(node_, "cloud", rclcpp::QoS(10));
   //sub_->registerCallback(std::bind(&ColorCloudFromImage::cloudCallback, this, std::placeholders::_1));
   mn_ = new tf2_ros::MessageFilter<sensor_msgs::msg::PointCloud2> (*sub_, *tf_buffer_, "", 30, node_);
 
@@ -35,6 +37,10 @@ ColorCloudFromImage::ColorCloudFromImage(const rclcpp::NodeOptions& options)
   enabled_ = !lazy_;
   node_->declare_parameter("mono", false);
   node_->get_parameter("mono", mono_);
+  node_->declare_parameter("use_self_mask", false);
+  node_->get_parameter("use_self_mask", use_self_mask_);
+  node_->declare_parameter("keep_uncolored", false);
+  node_->get_parameter("keep_uncolored", keep_uncolored_);
   node_->get_parameter("do_mono_scaling", mono_scaling_);
   node_->get_parameter("mono_scale", mono_scale_); // 0.01 and -273.15 for centi kelvin to celsius
   node_->get_parameter("mono_offset", mono_offset_);
@@ -46,8 +52,35 @@ ColorCloudFromImage::ColorCloudFromImage(const rclcpp::NodeOptions& options)
     cloud_callback = std::bind(&ColorCloudFromImage::cloudCallback<pcl::PointXYZRGB>, this, std::placeholders::_1);
   }
 
-  // TODO add self filter
-  //self_filter_->getSelfMask()->getLinkNames(filter_frames_);
+  if (use_self_mask_) {
+    // The camera sub-namespaces are the entries of "cameras", which is also the order CameraLoader
+    // builds its list in, so index i here is camera i there.
+    std::vector<std::string> camera_namespaces;
+    node_->get_parameter("cameras", camera_namespaces);
+    self_masks_.resize(camera_namespaces.size());
+
+    if (camera_namespaces.size() != camera_loader_.cameras().size()) {
+      RCLCPP_ERROR_STREAM(node_->get_logger(), "'cameras' lists " << camera_namespaces.size() << " entries but "
+                          << camera_loader_.cameras().size() << " cameras were loaded. Disabling the self mask, which "
+                          "would otherwise be matched to the wrong camera.");
+      use_self_mask_ = false;
+    } else {
+      for (size_t i = 0; i < camera_namespaces.size(); ++i) {
+        const std::string topic = camera_namespaces[i] + "/self_mask";
+        self_mask_subs_.push_back(node_->create_subscription<sensor_msgs::msg::Image>(
+          topic, 1,
+          [this, i](const sensor_msgs::msg::Image::ConstSharedPtr& msg) {
+            std::lock_guard<std::mutex> lock(self_mask_mutex_);
+            self_masks_[i].push_back(msg);
+            while (self_masks_[i].size() > kSelfMaskHistory) {
+              self_masks_[i].pop_front();
+            }
+          }));
+        RCLCPP_INFO_STREAM(node_->get_logger(), "Using self mask for camera '" << camera_namespaces[i] << "' on " << topic);
+      }
+    }
+  }
+
   use_self_filter_ = !filter_frames_.empty();
   if (use_self_filter_)
   {
@@ -89,7 +122,9 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
   std::vector<int> in_to_out_index(cloud_in.size(), -1);
   std::vector<double> distance_from_center(cloud_in.size(), extended_image_geometry::INVALID);
   // Iterate over every camera
-  for (const extended_image_geometry::CameraPtr& cam: camera_loader_.cameras()) {
+  const auto& cameras = camera_loader_.cameras();
+  for (size_t camera_index = 0; camera_index < cameras.size(); ++camera_index) {
+    const extended_image_geometry::CameraPtr& cam = cameras[camera_index];
     if (!cam->cameraInfoReceived()) {
       RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 10000, "Camera info not received for camera: " << cam->getName());
       continue;
@@ -152,16 +187,36 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
     pcl::PointCloud<pcl::PointXYZ> cloud;
     pcl::fromROSMsg(cloud_cam_frame, cloud);
 
-    if (mono_) {
-      if (cv_image->image.type() == CV_16UC1) {
-        processCamera<PointType, uint16_t>(cam, cv_image, cloud_in, cloud, cloud_out, in_to_out_index, distance_from_center);
-      } else {
-        processCamera<PointType, float>(cam, cv_image, cloud_in, cloud,cloud_out, in_to_out_index, distance_from_center);
-      }
-    } else {
-      processCamera<PointType, extended_image_geometry::Color>(cam, cv_image, cloud_in, cloud, cloud_out, in_to_out_index, distance_from_center);
+    cv::Mat self_mask;
+    if (use_self_mask_ && !getSelfMask(camera_index, cam->getName(), image_time, self_mask)) {
+      RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 10000, "No self mask matching the current image of camera: " << cam->getName() << ". Skipping it rather than risk colouring from the robot.");
+      continue;
     }
 
+    if (mono_) {
+      if (cv_image->image.type() == CV_16UC1) {
+        processCamera<PointType, uint16_t>(cam, cv_image, cloud_in, cloud, cloud_out, in_to_out_index, distance_from_center, self_mask);
+      } else {
+        processCamera<PointType, float>(cam, cv_image, cloud_in, cloud,cloud_out, in_to_out_index, distance_from_center, self_mask);
+      }
+    } else {
+      processCamera<PointType, extended_image_geometry::Color>(cam, cv_image, cloud_in, cloud, cloud_out, in_to_out_index, distance_from_center, self_mask);
+    }
+
+  }
+
+  if (keep_uncolored_) {
+    // A point no camera could colour
+    for (unsigned int i = 0; i < cloud_in.size(); ++i) {
+      if (in_to_out_index[i] != -1) {
+        continue;
+      }
+      PointType uncolored_point;
+      uncolored_point.x = cloud_in[i].x;
+      uncolored_point.y = cloud_in[i].y;
+      uncolored_point.z = cloud_in[i].z;
+      cloud_out.push_back(uncolored_point);
+    }
   }
 
   // Convert back to sensor msg
@@ -172,11 +227,38 @@ void ColorCloudFromImage::cloudCallback(const std::shared_ptr<sensor_msgs::msg::
 }
 
 template<typename PointType, typename ColorType>
-void ColorCloudFromImage::processCamera(const extended_image_geometry::CameraPtr& cam, const cv_bridge::CvImageConstPtr& cv_image, const pcl::PointCloud<pcl::PointXYZ>& cloud_in, const pcl::PointCloud<pcl::PointXYZ>& cloud, pcl::PointCloud<PointType>& cloud_out, std::vector<int>& in_to_out_index, std::vector<double>& distance_from_center) {
+void ColorCloudFromImage::processCamera(const extended_image_geometry::CameraPtr& cam, const cv_bridge::CvImageConstPtr& cv_image, const pcl::PointCloud<pcl::PointXYZ>& cloud_in, const pcl::PointCloud<pcl::PointXYZ>& cloud, pcl::PointCloud<PointType>& cloud_out, std::vector<int>& in_to_out_index, std::vector<double>& distance_from_center, const cv::Mat& self_mask) {
+
+  // The mask is rendered at a fraction of the camera resolution, so pixels have to be scaled into it.
+  const bool has_mask = !self_mask.empty();
+  double mask_scale_x = 0.0;
+  double mask_scale_y = 0.0;
+  if (has_mask) {
+    const auto& resolution = cam->model().cameraInfo()->resolution;
+    if (resolution.size() != 2 || resolution[0] <= 0 || resolution[1] <= 0) {
+      RCLCPP_ERROR_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 10000, "Camera " << cam->getName() << " reports no resolution, cannot apply its self mask.");
+      return;
+    }
+    mask_scale_x = static_cast<double>(self_mask.cols) / static_cast<double>(resolution[0]);
+    mask_scale_y = static_cast<double>(self_mask.rows) / static_cast<double>(resolution[1]);
+  }
 
   for (unsigned int i = 0; i < cloud_in.size(); ++i) {
     Eigen::Vector3f point_cam(cloud[i].x, cloud[i].y, cloud[i].z);
     double new_dist;
+
+    if (has_mask) {
+      Eigen::Vector2d pixel;
+      if (!cam->model().worldToPixel(point_cam.cast<double>(), pixel)) {
+        continue;
+      }
+      const int mask_x = std::clamp(static_cast<int>(pixel.x() * mask_scale_x), 0, self_mask.cols - 1);
+      const int mask_y = std::clamp(static_cast<int>(pixel.y() * mask_scale_y), 0, self_mask.rows - 1);
+      if (self_mask.at<uint8_t>(mask_y, mask_x) == 0) {
+        // The robot is between this point and the lens, so that pixel shows the robot, not the point.
+        continue;
+      }
+    }
 
     ColorType color = cam->model().worldToColor<ColorType>(point_cam.cast<double>(), cv_image->image, new_dist);
 
@@ -249,6 +331,36 @@ void ColorCloudFromImage::update_point_color(PointType& point_to_update, const C
   RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 10000, "No specialization for update_point_color for point type: " << typeid(PointType).name() << " and color type: " << typeid(ColorType).name());
 }
 
+
+bool ColorCloudFromImage::getSelfMask(size_t camera_index, const std::string& camera_name, const rclcpp::Time& image_stamp, cv::Mat& mask_out) const
+{
+  // The self filter stamps each mask with the image it was rendered for, so this is an equality test
+  // rather than a tolerance: a mask from a neighbouring frame has the arm in the wrong place.
+  sensor_msgs::msg::Image::ConstSharedPtr mask;
+  {
+    std::lock_guard<std::mutex> lock(self_mask_mutex_);
+    if (camera_index >= self_masks_.size()) {
+      return false;
+    }
+    for (const auto& candidate : self_masks_[camera_index]) {
+      if (rclcpp::Time(candidate->header.stamp) == image_stamp) {
+        mask = candidate;
+        break;
+      }
+    }
+  }
+  if (!mask) {
+    return false;
+  }
+  if (mask->encoding != "mono8") {
+    RCLCPP_ERROR_STREAM_THROTTLE(node_->get_logger(), *node_->get_clock(), 10000, "Self mask for camera " << camera_name << " is '" << mask->encoding << "', expected mono8.");
+    return false;
+  }
+
+  // White is valid, black is robot, matching the static masks in ExtendedCameraInfo.
+  mask_out = cv_bridge::toCvShare(mask)->image;
+  return !mask_out.empty();
+}
 
 void ColorCloudFromImage::connectCb(rclcpp::MatchedInfo& info)
 {

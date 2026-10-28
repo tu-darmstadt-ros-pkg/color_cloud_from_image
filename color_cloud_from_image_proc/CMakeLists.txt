@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.16)
 project(color_cloud_from_image_proc)
 
 # Default to C++17
@@ -63,7 +63,14 @@ target_include_directories(${PROJECT_NAME}
   PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
   "$<INSTALL_INTERFACE:include>")
-ament_target_dependencies(${PROJECT_NAME} PUBLIC ${DEPENDENCIES})
+target_link_libraries(${PROJECT_NAME} PUBLIC
+                      extended_camera_loader::extended_camera_loader
+                      ${pcl_ros_TARGETS}
+                      tf2::tf2
+                      tf2_ros::tf2_ros
+                      tf2_sensor_msgs::tf2_sensor_msgs
+                      cv_bridge::cv_bridge
+                      message_filters::message_filters)
 
 # composable node
 rclcpp_components_register_nodes(${PROJECT_NAME} PLUGIN "color_cloud_from_image::ColorCloudFromImage" EXECUTABLE color_cloud_from_image_component)
@@ -74,7 +81,7 @@ rclcpp_components_register_nodes(${PROJECT_NAME} PLUGIN "color_cloud_from_image:
 # add_dependencies(color_cloud_from_image_proc ${catkin_EXPORTED_TARGETS})
 
 add_executable(${PROJECT_NAME}_standalone_node src/color_cloud_from_image_standalone_node.cpp)
-#ament_target_dependencies(${PROJECT_NAME}_standalone_node PUBLIC ${DEPENDENCIES})
+#target_link_libraries(${PROJECT_NAME}_standalone_node PUBLIC ${DEPENDENCIES_TARGETS})
 target_link_libraries(${PROJECT_NAME}_standalone_node
   ${PROJECT_NAME}
 )

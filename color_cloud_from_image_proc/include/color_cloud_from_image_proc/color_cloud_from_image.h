@@ -13,7 +13,7 @@
 //#include <aslam/cameras.hpp>
 #include <extended_camera_model/camera_model.h>
 
-#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/transform_listener.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 // pcl
@@ -25,15 +25,15 @@
 #include <pcl_ros/transforms.hpp>
 #include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
-// TODO switch to gpu filter or use https://github.com/leggedrobotics/robot_self_filter
-//#include "robot_self_filter/self_see_filter.h"
+#include <tf2_ros/message_filter.hpp>
+#include <message_filters/subscriber.hpp>
 
-#include <tf2_ros/message_filter.h>
-#include <message_filters/subscriber.h>
+#include <deque>
+#include <mutex>
 
 #include <extended_camera_loader/camera_loader.h>
 
-#include "tf2_ros/create_timer_ros.h"
+#include "tf2_ros/create_timer_ros.hpp"
 
 
 namespace color_cloud_from_image {
@@ -58,7 +58,17 @@ namespace color_cloud_from_image {
     void cloudCallback(const std::shared_ptr<sensor_msgs::msg::PointCloud2 const> cloud_ptr);
 
     template<typename PointType, typename ColorType>
-    void processCamera(const extended_image_geometry::CameraPtr& cam, const cv_bridge::CvImageConstPtr& cv_image, const pcl::PointCloud<pcl::PointXYZ>& cloud_in, const pcl::PointCloud<pcl::PointXYZ>& cloud, pcl::PointCloud<PointType>& cloud_out, std::vector<int>& in_to_out_index, std::vector<double>& distance_from_center);
+    void processCamera(const extended_image_geometry::CameraPtr& cam, const cv_bridge::CvImageConstPtr& cv_image, const pcl::PointCloud<pcl::PointXYZ>& cloud_in, const pcl::PointCloud<pcl::PointXYZ>& cloud, pcl::PointCloud<PointType>& cloud_out, std::vector<int>& in_to_out_index, std::vector<double>& distance_from_center, const cv::Mat& self_mask);
+
+    /**
+     * Latest self mask for a camera.
+     * The mask is rendered for the timestamp of a particular image.
+     *
+     * @return false when the mask is missing or belongs to a different frame, in which case the
+     *         camera must not be used at all: colouring from an unverified image is what leaks the
+     *         robot into the map.
+     */
+    bool getSelfMask(size_t camera_index, const std::string& camera_name, const rclcpp::Time& image_stamp, cv::Mat& mask_out) const;
     /*template<typename PointType, typename ImageType>
     void color_point(PointType& point, const extended_image_geometry::CameraPtr& cam, const Eigen::Vector3f& point_cam, const cv_bridge::CvImageConstPtr& cv_image, double& new_dist);*/
 
@@ -83,8 +93,14 @@ namespace color_cloud_from_image {
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
-    //std::shared_ptr<filters::SelfFilter<pcl::PointCloud<pcl::PointXYZ> > > self_filter_;
     bool use_self_filter_;
+    
+    bool use_self_mask_;
+    bool keep_uncolored_;
+    mutable std::mutex self_mask_mutex_;
+    std::vector<std::deque<sensor_msgs::msg::Image::ConstSharedPtr>> self_masks_;
+    std::vector<rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr> self_mask_subs_;
+    static constexpr size_t kSelfMaskHistory = 5;
 
     //ros::Subscriber cloud_sub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_pub_;
